@@ -99,6 +99,34 @@
             </intent-filter>
         </service>
 
+        <!-- GIF Live Wallpaper Service -->
+        <service
+            android:name=".gallery.wallpaper.GifLiveWallpaperService"
+            android:exported="true"
+            android:label="GIF Live Wallpaper"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/gif_wallpaper" />
+        </service>
+
+        <!-- Video Live Wallpaper Service -->
+        <service
+            android:name=".gallery.wallpaper.VideoLiveWallpaperService"
+            android:exported="true"
+            android:label="Video Live Wallpaper"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/video_wallpaper" />
+        </service>
+
         <!-- WorkManager for auto chapter updates -->
         <provider
             android:name="androidx.startup.InitializationProvider"

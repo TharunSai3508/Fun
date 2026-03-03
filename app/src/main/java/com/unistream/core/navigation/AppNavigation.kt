@@ -1,5 +1,6 @@
 package com.unistream.core.navigation
 
+import android.util.Base64
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -8,26 +9,39 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.unistream.core.permissions.MediaPermissionWrapper
 import com.unistream.core.security.AppLockScreen
-import com.unistream.gallery.ui.GalleryScreen
 import com.unistream.gallery.ui.AlbumsScreen
-import com.unistream.gallery.ui.MediaDetailScreen
-import com.unistream.gallery.ui.HiddenVaultScreen
 import com.unistream.gallery.ui.EditorScreen
+import com.unistream.gallery.ui.GalleryScreen
+import com.unistream.gallery.ui.HiddenVaultScreen
+import com.unistream.gallery.ui.MediaDetailScreen
 import com.unistream.gallery.ui.WallpaperScreen
 import com.unistream.home.HomeScreen
-import com.unistream.streaming.ui.StreamingHomeScreen
 import com.unistream.streaming.ui.PlayerScreen
 import com.unistream.streaming.ui.PlaylistScreen
+import com.unistream.streaming.ui.StreamingHomeScreen
+import com.unistream.webnovel.ui.NovelImportScreen
 import com.unistream.webnovel.ui.NovelLibraryScreen
 import com.unistream.webnovel.ui.NovelReaderScreen
-import com.unistream.webnovel.ui.NovelImportScreen
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers: encode/decode URI/URL values safe for use as NavHost path segments.
+// Base64 URL-safe avoids slashes, question marks, and other special characters.
+// ─────────────────────────────────────────────────────────────────────────────
+fun encodeNavParam(value: String): String =
+    Base64.encodeToString(value.toByteArray(Charsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
+
+fun decodeNavParam(encoded: String): String =
+    runCatching {
+        String(Base64.decode(encoded, Base64.URL_SAFE or Base64.NO_WRAP), Charsets.UTF_8)
+    }.getOrDefault(encoded)  // fallback: return as-is if not encoded
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screens
+// ─────────────────────────────────────────────────────────────────────────────
 sealed class Screen(val route: String) {
-    // App Lock
     object AppLock : Screen("app_lock")
-
-    // Home
     object Home : Screen("home")
 
     // Gallery
@@ -44,10 +58,11 @@ sealed class Screen(val route: String) {
         fun createRoute(mediaId: Long) = "wallpaper/$mediaId"
     }
 
-    // Streaming
+    // Streaming — sourceId is Base64-encoded to avoid URI path collisions
     object StreamingHome : Screen("streaming_home")
     object Player : Screen("player/{sourceType}/{sourceId}") {
-        fun createRoute(sourceType: String, sourceId: String) = "player/$sourceType/$sourceId"
+        fun createRoute(sourceType: String, sourceId: String) =
+            "player/$sourceType/${encodeNavParam(sourceId)}"
     }
     object Playlist : Screen("playlist/{playlistId}") {
         fun createRoute(playlistId: Long) = "playlist/$playlistId"
@@ -61,6 +76,9 @@ sealed class Screen(val route: String) {
     object NovelImport : Screen("novel_import")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// App Navigation
+// ─────────────────────────────────────────────────────────────────────────────
 @Composable
 fun AppNavigation(
     isAppLocked: Boolean,
@@ -68,7 +86,6 @@ fun AppNavigation(
     onPinAuth: (String) -> Boolean
 ) {
     val navController = rememberNavController()
-
     val startDestination = if (isAppLocked) Screen.AppLock.route else Screen.Home.route
 
     NavHost(
@@ -99,7 +116,7 @@ fun AppNavigation(
             )
         }
     ) {
-        // App Lock Screen
+        // ── App Lock ───────────────────────────────────────────────────────
         composable(Screen.AppLock.route) {
             AppLockScreen(
                 onBiometricAuth = onBiometricAuth,
@@ -112,7 +129,7 @@ fun AppNavigation(
             )
         }
 
-        // Home Screen
+        // ── Home ───────────────────────────────────────────────────────────
         composable(Screen.Home.route) {
             HomeScreen(
                 onNavigateToGallery = { navController.navigate(Screen.Gallery.route) },
@@ -121,25 +138,29 @@ fun AppNavigation(
             )
         }
 
-        // Gallery Screens
+        // ── Gallery (wrapped in permission check) ─────────────────────────
         composable(Screen.Gallery.route) {
-            GalleryScreen(
-                onNavigateToAlbums = { navController.navigate(Screen.Albums.route) },
-                onNavigateToMedia = { mediaId ->
-                    navController.navigate(Screen.MediaDetail.createRoute(mediaId))
-                },
-                onNavigateToHiddenVault = { navController.navigate(Screen.HiddenVault.route) },
-                onBack = { navController.popBackStack() }
-            )
+            MediaPermissionWrapper {
+                GalleryScreen(
+                    onNavigateToAlbums = { navController.navigate(Screen.Albums.route) },
+                    onNavigateToMedia = { mediaId ->
+                        navController.navigate(Screen.MediaDetail.createRoute(mediaId))
+                    },
+                    onNavigateToHiddenVault = { navController.navigate(Screen.HiddenVault.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(Screen.Albums.route) {
-            AlbumsScreen(
-                onNavigateToMedia = { mediaId ->
-                    navController.navigate(Screen.MediaDetail.createRoute(mediaId))
-                },
-                onBack = { navController.popBackStack() }
-            )
+            MediaPermissionWrapper {
+                AlbumsScreen(
+                    onNavigateToMedia = { mediaId ->
+                        navController.navigate(Screen.MediaDetail.createRoute(mediaId))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(Screen.MediaDetail.route) { backStackEntry ->
@@ -177,22 +198,26 @@ fun AppNavigation(
             )
         }
 
-        // Streaming Screens
+        // ── Streaming (wrapped in permission check for local media) ────────
         composable(Screen.StreamingHome.route) {
-            StreamingHomeScreen(
-                onNavigateToPlayer = { sourceType, sourceId ->
-                    navController.navigate(Screen.Player.createRoute(sourceType, sourceId))
-                },
-                onNavigateToPlaylist = { playlistId ->
-                    navController.navigate(Screen.Playlist.createRoute(playlistId))
-                },
-                onBack = { navController.popBackStack() }
-            )
+            MediaPermissionWrapper {
+                StreamingHomeScreen(
+                    onNavigateToPlayer = { sourceType, sourceId ->
+                        navController.navigate(Screen.Player.createRoute(sourceType, sourceId))
+                    },
+                    onNavigateToPlaylist = { playlistId ->
+                        navController.navigate(Screen.Playlist.createRoute(playlistId))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(Screen.Player.route) { backStackEntry ->
             val sourceType = backStackEntry.arguments?.getString("sourceType") ?: "local"
-            val sourceId = backStackEntry.arguments?.getString("sourceId") ?: ""
+            // Decode the Base64-encoded sourceId back to the original URI/URL
+            val encodedId = backStackEntry.arguments?.getString("sourceId") ?: ""
+            val sourceId = decodeNavParam(encodedId)
             PlayerScreen(
                 sourceType = sourceType,
                 sourceId = sourceId,
@@ -211,7 +236,7 @@ fun AppNavigation(
             )
         }
 
-        // WebNovel Screens
+        // ── WebNovel ───────────────────────────────────────────────────────
         composable(Screen.NovelLibrary.route) {
             NovelLibraryScreen(
                 onNavigateToReader = { novelId ->

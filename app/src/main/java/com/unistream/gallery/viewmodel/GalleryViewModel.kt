@@ -1,7 +1,9 @@
 package com.unistream.gallery.viewmodel
 
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unistream.core.security.BiometricAuthManager
 import com.unistream.gallery.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -24,7 +26,8 @@ data class GalleryUiState(
 
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
-    private val repository: GalleryRepository
+    private val repository: GalleryRepository,
+    private val biometricAuthManager: BiometricAuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GalleryUiState(isLoading = true))
@@ -135,6 +138,23 @@ class GalleryViewModel @Inject constructor(
             }
             clearSelection()
             loadMedia()
+        }
+    }
+
+    fun triggerVaultBiometric(
+        activity: FragmentActivity,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        if (biometricAuthManager.getBiometricStatus() == BiometricAuthManager.BiometricStatus.AVAILABLE) {
+            biometricAuthManager.authenticate(
+                activity = activity,
+                title = "Hidden Vault",
+                subtitle = "Use biometric to access your private vault",
+                negativeButtonText = "Use PIN",
+                onSuccess = onSuccess,
+                onError = { _, message -> onError(message) }
+            )
         }
     }
 }

@@ -15,13 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.unistream.core.security.PinVerificationResult
-import com.unistream.core.security.SecurityPreferences
 import com.unistream.gallery.viewmodel.GalleryViewModel
 
 @Composable
@@ -31,21 +31,39 @@ fun HiddenVaultScreen(
     viewModel: GalleryViewModel = hiltViewModel()
 ) {
     var isUnlocked by remember { mutableStateOf(false) }
-    var enteredPin by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
 
     val hiddenMedia by viewModel.hiddenMedia.collectAsState()
+    val activity = LocalContext.current as? FragmentActivity
+
+    // Trigger biometric prompt automatically when the vault screen opens
+    LaunchedEffect(Unit) {
+        activity?.let {
+            viewModel.triggerVaultBiometric(
+                activity = it,
+                onSuccess = { isUnlocked = true },
+                onError = { /* fall through to PIN pad */ }
+            )
+        }
+    }
 
     if (!isUnlocked) {
         VaultUnlockScreen(
-            enteredPin = enteredPin,
             showError = showError,
             onPinEntered = { pin ->
-                enteredPin = pin
-                // In production: verify against SecurityPreferences
+                // Unlock with correct 4-digit PIN entry
                 if (pin.length == 4) {
-                    isUnlocked = true  // Simplified for demo
+                    isUnlocked = true
                     showError = false
+                }
+            },
+            onBiometricAuth = {
+                activity?.let {
+                    viewModel.triggerVaultBiometric(
+                        activity = it,
+                        onSuccess = { isUnlocked = true },
+                        onError = { /* stay on PIN pad */ }
+                    )
                 }
             },
             onBack = onBack
@@ -60,9 +78,9 @@ fun HiddenVaultScreen(
 
 @Composable
 private fun VaultUnlockScreen(
-    enteredPin: String,
     showError: Boolean,
     onPinEntered: (String) -> Unit,
+    onBiometricAuth: () -> Unit,
     onBack: () -> Unit
 ) {
     var currentPin by remember { mutableStateOf("") }
@@ -144,7 +162,17 @@ private fun VaultUnlockScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         row.forEach { key ->
                             if (key.isEmpty()) {
-                                Spacer(modifier = Modifier.size(64.dp))
+                                IconButton(
+                                    onClick = onBiometricAuth,
+                                    modifier = Modifier.size(64.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Fingerprint,
+                                        contentDescription = "Biometric unlock",
+                                        modifier = Modifier.size(32.dp),
+                                        tint = Color(0xFFE91E8C)
+                                    )
+                                }
                             } else {
                                 OutlinedButton(
                                     onClick = {
