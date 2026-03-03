@@ -70,6 +70,7 @@ android {
     }
 }
 
+
 dependencies {
     // Core AndroidX
     implementation(libs.androidx.core.ktx)
