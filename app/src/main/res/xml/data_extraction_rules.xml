@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+
     <cloud-backup>
+
+        <!-- Include shared preferences first -->
+        <include domain="sharedpref" path="." />
+
+        <!-- Exclude secure prefs -->
         <exclude domain="sharedpref" path="unistream_secure_prefs.xml" />
+
+        <!-- Include database -->
         <include domain="database" path="unistream_db" />
+
     </cloud-backup>
+
     <device-transfer>
+
+        <!-- Include sharedpref domain -->
+        <include domain="sharedpref" path="." />
+
+        <!-- Exclude secure prefs -->
         <exclude domain="sharedpref" path="unistream_secure_prefs.xml" />
+
     </device-transfer>
+
 </data-extraction-rules>

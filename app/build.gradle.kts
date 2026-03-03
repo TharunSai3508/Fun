@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
 }
 
 android {
@@ -78,6 +79,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.splashscreen)
     implementation(libs.androidx.datastore.preferences)
+    implementation("org.jspecify:jspecify:0.3.0")
 
     // Compose BOM
     implementation(platform(libs.androidx.compose.bom))

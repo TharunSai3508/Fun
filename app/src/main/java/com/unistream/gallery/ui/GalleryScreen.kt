@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -157,7 +158,10 @@ private fun GalleryTopBar(
             },
             actions = {
                 IconButton(onClick = onHideSelected) {
-                    Icon(Icons.Default.LockOutline, contentDescription = "Hide selected")
+                    Icon(
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = "Hide selected"
+                    )
                 }
                 IconButton(onClick = {}) {
                     Icon(Icons.Default.Share, contentDescription = "Share")

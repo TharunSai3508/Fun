@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -223,7 +224,7 @@ private fun VaultContentScreen(
             if (hiddenMediaCount == 0) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        Icons.Default.LockOutline,
+                        imageVector = Icons.Outlined.Lock,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = Color.White.copy(alpha = 0.3f)

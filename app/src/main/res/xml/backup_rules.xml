@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Exclude sensitive encrypted prefs from backup -->
+
+    <!-- First include entire sharedpref domain -->
+    <include domain="sharedpref" path="." />
+
+    <!-- Then exclude secure encrypted prefs -->
     <exclude domain="sharedpref" path="unistream_secure_prefs.xml" />
-    <!-- Include novel downloads and reader settings -->
+
+    <!-- Include database -->
     <include domain="database" path="unistream_db" />
+
+    <!-- Include specific safe prefs -->
     <include domain="sharedpref" path="reader_settings.xml" />
+
 </full-backup-content>
