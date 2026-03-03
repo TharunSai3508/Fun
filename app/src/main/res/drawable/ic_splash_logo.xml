@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Background circle -->
+    <path
+        android:fillColor="#7C4DFF"
+        android:pathData="M54,54m-48,0a48,48 0,1 1,96 0a48,48 0,1 1,-96 0" />
+
+    <!-- Star / Diamond shape representing multi-platform -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,20 L60,44 L84,44 L64,58 L72,82 L54,68 L36,82 L44,58 L24,44 L48,44 Z" />
+
+</vector>

@@ -1,0 +1,80 @@
+package com.unistream.core.security
+
+import android.content.Context
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class AppLockViewModel @Inject constructor(
+    private val securityPreferences: SecurityPreferences,
+    private val biometricAuthManager: BiometricAuthManager
+) : ViewModel() {
+
+    private val _isLocked = MutableStateFlow(false)
+    val isLocked: StateFlow<Boolean> = _isLocked.asStateFlow()
+
+    private val _isInitializing = MutableStateFlow(true)
+    val isInitializing: StateFlow<Boolean> = _isInitializing.asStateFlow()
+
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            _isLocked.value = securityPreferences.isAppLockEnabled
+            _isInitializing.value = false
+        }
+    }
+
+    fun authenticate(activity: Context) {
+        val fragmentActivity = activity as? FragmentActivity ?: return
+
+        if (!securityPreferences.isBiometricEnabled) return
+
+        if (biometricAuthManager.getBiometricStatus() == BiometricAuthManager.BiometricStatus.AVAILABLE) {
+            biometricAuthManager.authenticate(
+                activity = fragmentActivity,
+                title = "Unlock Unistream",
+                subtitle = "Use biometric to access the app",
+                negativeButtonText = "Use PIN",
+                onSuccess = { _isLocked.value = false },
+                onError = { _, message -> _authError.value = message }
+            )
+        }
+    }
+
+    fun authenticateWithPin(pin: String): Boolean {
+        val result = securityPreferences.verifyPin(pin)
+        return when (result) {
+            PinVerificationResult.CORRECT -> {
+                _isLocked.value = false
+                true
+            }
+            PinVerificationResult.FAKE_VAULT -> {
+                // Navigate to fake vault – don't unlock real app
+                false
+            }
+            else -> {
+                _authError.value = "Incorrect PIN"
+                false
+            }
+        }
+    }
+
+    fun lock() {
+        if (securityPreferences.isAppLockEnabled) {
+            _isLocked.value = true
+        }
+    }
+
+    fun clearAuthError() {
+        _authError.value = null
+    }
+}
