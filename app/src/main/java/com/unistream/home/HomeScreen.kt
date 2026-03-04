@@ -28,7 +28,8 @@ import androidx.compose.ui.unit.sp
 fun HomeScreen(
     onNavigateToGallery: () -> Unit,
     onNavigateToStreaming: () -> Unit,
-    onNavigateToNovel: () -> Unit
+    onNavigateToNovel: () -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -100,6 +101,16 @@ fun HomeScreen(
                 icon = Icons.Default.MenuBook,
                 gradient = listOf(Color(0xFF1565C0), Color(0xFF26C6DA)),
                 onClick = onNavigateToNovel
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ModuleCard(
+                title = "Settings",
+                subtitle = "Profile, login and app preferences",
+                icon = Icons.Default.Settings,
+                gradient = listOf(Color(0xFF455A64), Color(0xFF263238)),
+                onClick = onNavigateToSettings
             )
 
             Spacer(modifier = Modifier.weight(1f))

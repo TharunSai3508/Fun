@@ -1,6 +1,8 @@
 package com.unistream.gallery.ui
 
 import android.app.WallpaperManager
+import android.content.ComponentName
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.compose.foundation.background
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.request.videoFrameMillis
 import com.unistream.gallery.viewmodel.GalleryViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -96,6 +99,7 @@ fun WallpaperScreen(
                     model = ImageRequest.Builder(context)
                         .data(media.uri)
                         .crossfade(true)
+                        .apply { if (media.isVideo) videoFrameMillis(0) }
                         .build(),
                     contentDescription = "Wallpaper Preview",
                     modifier = Modifier.fillMaxSize(),
@@ -155,39 +159,52 @@ fun WallpaperScreen(
                         scope.launch(Dispatchers.IO) {
                             isApplying = true
                             try {
-                                val wallpaperManager = WallpaperManager.getInstance(context)
-                                val inputStream = context.contentResolver.openInputStream(media.uri)
-                                val bitmap = BitmapFactory.decodeStream(inputStream)
-
-                                if (bitmap != null) {
-                                    when (selectedTarget) {
-                                        WallpaperTarget.HOME -> {
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                                wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                                            } else {
-                                                wallpaperManager.setBitmap(bitmap)
-                                            }
-                                        }
-                                        WallpaperTarget.LOCK -> {
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                                wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_LOCK)
-                                            }
-                                        }
-                                        WallpaperTarget.BOTH -> {
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                                wallpaperManager.setBitmap(
-                                                    bitmap, null, true,
-                                                    WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
-                                                )
-                                            } else {
-                                                wallpaperManager.setBitmap(bitmap)
-                                            }
-                                        }
+                                if (media.isVideo || media.isGif) {
+                                    VideoLiveWallpaperService.selectedVideoUri = media.uri.toString()
+                                    val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                                        putExtra(
+                                            WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                                            ComponentName(context, VideoLiveWallpaperService::class.java)
+                                        )
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     }
+                                    context.startActivity(intent)
                                     showSuccess = true
+                                } else {
+                                    val wallpaperManager = WallpaperManager.getInstance(context)
+                                    val inputStream = context.contentResolver.openInputStream(media.uri)
+                                    val bitmap = BitmapFactory.decodeStream(inputStream)
+
+                                    if (bitmap != null) {
+                                        when (selectedTarget) {
+                                            WallpaperTarget.HOME -> {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                                    wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                                                } else {
+                                                    wallpaperManager.setBitmap(bitmap)
+                                                }
+                                            }
+                                            WallpaperTarget.LOCK -> {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                                    wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_LOCK)
+                                                }
+                                            }
+                                            WallpaperTarget.BOTH -> {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                                    wallpaperManager.setBitmap(
+                                                        bitmap, null, true,
+                                                        WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                                                    )
+                                                } else {
+                                                    wallpaperManager.setBitmap(bitmap)
+                                                }
+                                            }
+                                        }
+                                        showSuccess = true
+                                    }
                                 }
                             } catch (e: Exception) {
-                                // Handle error
+                                // no-op
                             } finally {
                                 isApplying = false
                             }

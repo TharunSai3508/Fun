@@ -49,7 +49,7 @@ class SecurityPreferences @Inject constructor(
         set(value) = prefs.edit().putString(KEY_APP_PIN, value).apply()
 
     var isAppLockEnabled: Boolean
-        get() = prefs.getBoolean(KEY_APP_LOCK_ENABLED, false)
+        get() = prefs.getBoolean(KEY_APP_LOCK_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_APP_LOCK_ENABLED, value).apply()
 
     var isBiometricEnabled: Boolean

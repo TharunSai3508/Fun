@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -16,6 +17,7 @@ import com.unistream.gallery.ui.HiddenVaultScreen
 import com.unistream.gallery.ui.EditorScreen
 import com.unistream.gallery.ui.WallpaperScreen
 import com.unistream.home.HomeScreen
+import com.unistream.settings.ui.SettingsScreen
 import com.unistream.streaming.ui.StreamingHomeScreen
 import com.unistream.streaming.ui.PlayerScreen
 import com.unistream.streaming.ui.PlaylistScreen
@@ -47,7 +49,7 @@ sealed class Screen(val route: String) {
     // Streaming
     object StreamingHome : Screen("streaming_home")
     object Player : Screen("player/{sourceType}/{sourceId}") {
-        fun createRoute(sourceType: String, sourceId: String) = "player/$sourceType/$sourceId"
+        fun createRoute(sourceType: String, sourceId: String) = "player/$sourceType/${Uri.encode(sourceId)}"
     }
     object Playlist : Screen("playlist/{playlistId}") {
         fun createRoute(playlistId: Long) = "playlist/$playlistId"
@@ -59,6 +61,8 @@ sealed class Screen(val route: String) {
         fun createRoute(novelId: Long, chapterId: Long = 0L) = "novel_reader/$novelId/$chapterId"
     }
     object NovelImport : Screen("novel_import")
+
+    object Settings : Screen("settings")
 }
 
 @Composable
@@ -117,7 +121,8 @@ fun AppNavigation(
             HomeScreen(
                 onNavigateToGallery = { navController.navigate(Screen.Gallery.route) },
                 onNavigateToStreaming = { navController.navigate(Screen.StreamingHome.route) },
-                onNavigateToNovel = { navController.navigate(Screen.NovelLibrary.route) }
+                onNavigateToNovel = { navController.navigate(Screen.NovelLibrary.route) },
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
             )
         }
 
@@ -192,7 +197,7 @@ fun AppNavigation(
 
         composable(Screen.Player.route) { backStackEntry ->
             val sourceType = backStackEntry.arguments?.getString("sourceType") ?: "local"
-            val sourceId = backStackEntry.arguments?.getString("sourceId") ?: ""
+            val sourceId = Uri.decode(backStackEntry.arguments?.getString("sourceId") ?: "")
             PlayerScreen(
                 sourceType = sourceType,
                 sourceId = sourceId,
@@ -241,6 +246,10 @@ fun AppNavigation(
                     }
                 }
             )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(onBack = { navController.popBackStack() })
         }
     }
 }
