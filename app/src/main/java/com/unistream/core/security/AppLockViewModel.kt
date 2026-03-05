@@ -28,7 +28,10 @@ class AppLockViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            _isLocked.value = securityPreferences.isAppLockEnabled
+            val hasPin = securityPreferences.appPin.isNotBlank()
+            val biometricAvailable = biometricAuthManager.getBiometricStatus() == BiometricAuthManager.BiometricStatus.AVAILABLE
+            val hasBiometricPath = securityPreferences.isBiometricEnabled && biometricAvailable
+            _isLocked.value = securityPreferences.isAppLockEnabled && (hasPin || hasBiometricPath)
             _isInitializing.value = false
         }
     }
@@ -57,11 +60,12 @@ class AppLockViewModel @Inject constructor(
                 _isLocked.value = false
                 true
             }
-            PinVerificationResult.FAKE_VAULT -> {
-                // Navigate to fake vault – don't unlock real app
+            PinVerificationResult.NOT_SET -> {
+                _authError.value = "PIN not set. Configure app lock in Settings."
                 false
             }
-            else -> {
+            PinVerificationResult.FAKE_VAULT -> false
+            PinVerificationResult.INCORRECT -> {
                 _authError.value = "Incorrect PIN"
                 false
             }
@@ -69,7 +73,12 @@ class AppLockViewModel @Inject constructor(
     }
 
     fun lock() {
-        if (securityPreferences.isAppLockEnabled) {
+        if (!securityPreferences.isAppLockEnabled) return
+
+        val hasPin = securityPreferences.appPin.isNotBlank()
+        val biometricAvailable = biometricAuthManager.getBiometricStatus() == BiometricAuthManager.BiometricStatus.AVAILABLE
+        val hasBiometricPath = securityPreferences.isBiometricEnabled && biometricAvailable
+        if (hasPin || hasBiometricPath) {
             _isLocked.value = true
         }
     }
