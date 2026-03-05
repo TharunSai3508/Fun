@@ -4,14 +4,30 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,9 +72,8 @@ fun AppLockScreen(
                 .fillMaxWidth()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // App Logo / Lock Icon
             Icon(
                 imageVector = Icons.Default.LockOpen,
                 contentDescription = "Lock",
@@ -76,29 +91,26 @@ fun AppLockScreen(
             )
 
             Text(
-                text = "Enter PIN to unlock",
+                text = "Unlock with PIN or Fingerprint",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.6f)
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
             )
 
-            // PIN dots display
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 repeat(maxPinLength) { index ->
                     Box(
                         modifier = Modifier
-                            .size(16.dp)
+                            .size(14.dp)
                             .clip(CircleShape)
                             .background(
                                 if (index < enteredPin.length) Color(0xFF7C4DFF)
-                                else Color.White.copy(alpha = 0.2f)
+                                else Color.White.copy(alpha = 0.25f)
                             )
                     )
                 }
             }
 
-            // Error message
             AnimatedVisibility(visible = showError, enter = fadeIn(), exit = fadeOut()) {
                 Text(
                     text = errorMessage,
@@ -107,10 +119,7 @@ fun AppLockScreen(
                 )
             }
 
-            // Numeric Keypad
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val rows = listOf(
                     listOf("1", "2", "3"),
                     listOf("4", "5", "6"),
@@ -118,12 +127,9 @@ fun AppLockScreen(
                     listOf("", "0", "⌫")
                 )
                 rows.forEach { row ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         row.forEach { key ->
                             if (key.isEmpty()) {
-                                // Biometric button slot
                                 IconButton(
                                     onClick = onBiometricAuth,
                                     modifier = Modifier.size(72.dp)
@@ -149,16 +155,7 @@ fun AppLockScreen(
                                             else -> {
                                                 if (enteredPin.length < maxPinLength) {
                                                     enteredPin += key
-                                                    if (enteredPin.length == maxPinLength) {
-                                                        val success = onPinAuth(enteredPin)
-                                                        if (success) {
-                                                            onAuthSuccess()
-                                                        } else {
-                                                            showError = true
-                                                            errorMessage = "Incorrect PIN. Try again."
-                                                            enteredPin = ""
-                                                        }
-                                                    }
+                                                    showError = false
                                                 }
                                             }
                                         }
@@ -168,6 +165,25 @@ fun AppLockScreen(
                         }
                     }
                 }
+            }
+
+            Button(
+                onClick = {
+                    if (enteredPin.length < 4) {
+                        showError = true
+                        errorMessage = "Enter at least 4 digits"
+                    } else {
+                        val ok = onPinAuth(enteredPin)
+                        if (ok) onAuthSuccess() else {
+                            showError = true
+                            errorMessage = "Incorrect PIN"
+                            enteredPin = ""
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(0.75f)
+            ) {
+                Text("Unlock")
             }
         }
     }
@@ -181,11 +197,7 @@ private fun PinKeyButton(
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.size(72.dp),
-        shape = CircleShape,
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = Color.White
-        ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        shape = CircleShape
     ) {
         Text(
             text = key,

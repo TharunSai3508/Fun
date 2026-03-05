@@ -75,11 +75,8 @@ fun GalleryScreen(
                     uiState.isLoading -> {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     }
-                    uiState.filteredMedia.isEmpty() -> {
-                        EmptyGalleryPlaceholder()
-                    }
                     else -> {
-                        // Pinterest-style Masonry Grid
+                        // Keep filter chips visible even if current filter has no content
                         LazyVerticalStaggeredGrid(
                             columns = StaggeredGridCells.Fixed(2),
                             modifier = Modifier.fillMaxSize(),
@@ -87,7 +84,6 @@ fun GalleryScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalItemSpacing = 4.dp
                         ) {
-                            // Filter chips row
                             item(span = StaggeredGridItemSpan.FullLine) {
                                 GalleryFilterChips(
                                     currentFilter = uiState.currentFilter,
@@ -95,22 +91,28 @@ fun GalleryScreen(
                                 )
                             }
 
-                            items(
-                                items = uiState.filteredMedia,
-                                key = { it.id }
-                            ) { media ->
-                                GalleryMediaCard(
-                                    media = media,
-                                    isSelected = uiState.selectedMedia.contains(media.id),
-                                    isFavorite = uiState.favorites.contains(media.id),
-                                    isSelectionMode = uiState.isSelectionMode,
-                                    onClick = {
-                                        if (uiState.isSelectionMode) viewModel.toggleSelection(media.id)
-                                        else onNavigateToMedia(media.id)
-                                    },
-                                    onLongClick = { viewModel.toggleSelection(media.id) },
-                                    onFavoriteClick = { viewModel.toggleFavorite(media.id) }
-                                )
+                            if (uiState.filteredMedia.isEmpty()) {
+                                item(span = StaggeredGridItemSpan.FullLine) {
+                                    EmptyGalleryPlaceholder()
+                                }
+                            } else {
+                                items(
+                                    items = uiState.filteredMedia,
+                                    key = { it.id }
+                                ) { media ->
+                                    GalleryMediaCard(
+                                        media = media,
+                                        isSelected = uiState.selectedMedia.contains(media.id),
+                                        isFavorite = uiState.favorites.contains(media.id),
+                                        isSelectionMode = uiState.isSelectionMode,
+                                        onClick = {
+                                            if (uiState.isSelectionMode) viewModel.toggleSelection(media.id)
+                                            else onNavigateToMedia(media.id)
+                                        },
+                                        onLongClick = { viewModel.toggleSelection(media.id) },
+                                        onFavoriteClick = { viewModel.toggleFavorite(media.id) }
+                                    )
+                                }
                             }
                         }
                     }

@@ -68,15 +68,22 @@ class StreamingViewModel @Inject constructor(
         _uiState.update { it.copy(showUrlDialog = show) }
     }
 
-    fun prepareUrlSource(url: String): VideoSource? {
+    suspend fun prepareUrlSource(url: String): VideoSource? {
         if (url.isBlank()) return null
         val processedUrl = if (url.contains("drive.google.com")) {
             repository.convertDriveUrl(url)
         } else url
-        val type = repository.detectSourceType(processedUrl)
+
+        val resolvedUrl = repository.resolvePlayableUrl(processedUrl) ?: processedUrl
+        if (!resolvedUrl.startsWith("http") && !resolvedUrl.startsWith("content://")) {
+            _uiState.update { it.copy(errorMessage = "Unsupported stream URL") }
+            return null
+        }
+
+        val type = repository.detectSourceType(resolvedUrl)
         return VideoSource(
             type = type,
-            uri = processedUrl,
+            uri = resolvedUrl,
             title = url.substringAfterLast("/").ifBlank { "Stream" }
         )
     }

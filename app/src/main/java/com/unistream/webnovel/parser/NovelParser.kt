@@ -29,7 +29,11 @@ class NovelParser @Inject constructor() {
         try {
             val doc = Jsoup.connect(url)
                 .userAgent("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/114.0.0.0 Mobile Safari/537.36")
-                .timeout(15_000)
+                .referrer("https://www.google.com/")
+                .timeout(20_000)
+                .followRedirects(true)
+                .ignoreContentType(true)
+                .ignoreHttpErrors(true)
                 .get()
 
             // Try to detect site and use appropriate parser
@@ -51,7 +55,11 @@ class NovelParser @Inject constructor() {
         try {
             val doc = Jsoup.connect(chapterUrl)
                 .userAgent("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/114.0.0.0 Mobile Safari/537.36")
-                .timeout(15_000)
+                .referrer("https://www.google.com/")
+                .timeout(20_000)
+                .followRedirects(true)
+                .ignoreContentType(true)
+                .ignoreHttpErrors(true)
                 .get()
 
             val host = doc.location().let { runCatching { java.net.URL(it).host }.getOrDefault("") }

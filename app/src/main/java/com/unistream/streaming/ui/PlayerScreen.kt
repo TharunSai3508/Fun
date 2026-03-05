@@ -34,6 +34,11 @@ fun PlayerScreen(
     viewModel: StreamingViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    if (sourceId.isBlank()) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+
     var showControls by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableStateOf(0L) }

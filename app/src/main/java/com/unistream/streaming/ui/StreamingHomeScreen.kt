@@ -25,6 +25,7 @@ import com.unistream.core.ui.theme.StreamingTheme
 import com.unistream.streaming.data.VideoSource
 import com.unistream.streaming.data.WatchHistoryEntity
 import com.unistream.streaming.viewmodel.StreamingViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun StreamingHomeScreen(
@@ -34,6 +35,7 @@ fun StreamingHomeScreen(
     viewModel: StreamingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
 
     StreamingTheme {
         Scaffold(
@@ -150,11 +152,13 @@ fun StreamingHomeScreen(
                 urlInput = uiState.urlInput,
                 onUrlChange = viewModel::setUrlInput,
                 onPlay = { url ->
-                    val source = viewModel.prepareUrlSource(url)
-                    if (source != null) {
-                        viewModel.showUrlDialog(false)
-                        viewModel.recordWatch(source)
-                        onNavigateToPlayer(source.type.name, source.uri)
+                    scope.launch {
+                        val source = viewModel.prepareUrlSource(url)
+                        if (source != null) {
+                            viewModel.showUrlDialog(false)
+                            viewModel.recordWatch(source)
+                            onNavigateToPlayer(source.type.name, source.uri)
+                        }
                     }
                 },
                 onDismiss = { viewModel.showUrlDialog(false) }
