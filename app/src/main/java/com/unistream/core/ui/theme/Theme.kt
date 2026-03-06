@@ -39,6 +39,23 @@ private val GalleryLightColors = lightColorScheme(
 )
 
 // ─────────────────────────────────────────────
+// Gallery Color Scheme (Dark)
+// ─────────────────────────────────────────────
+private val GalleryDarkColors = darkColorScheme(
+    primary = GalleryAccentPink,
+    onPrimary = Color(0xFF1A0010),
+    primaryContainer = Color(0xFF880050),
+    secondary = GallerySecondary,
+    tertiary = GalleryAccentPurple,
+    background = Color(0xFF121212),
+    surface = Color(0xFF1E1E1E),
+    onBackground = UniWhite,
+    onSurface = UniGray200,
+    surfaceVariant = Color(0xFF2A2A2A),
+    outline = UniGray600
+)
+
+// ─────────────────────────────────────────────
 // Streaming Color Scheme (Dark / Cinematic)
 // ─────────────────────────────────────────────
 private val StreamingDarkColors = darkColorScheme(
@@ -93,17 +110,31 @@ fun UniStreamTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = when (module) {
-        AppModule.GALLERY -> GalleryLightColors
+        AppModule.GALLERY -> if (darkTheme) GalleryDarkColors else GalleryLightColors
         AppModule.STREAMING -> StreamingDarkColors
         AppModule.NOVEL -> if (darkTheme) NovelDarkColors else NovelLightColors
         AppModule.GLOBAL -> if (darkTheme) darkColorScheme(
-            primary = Color(0xFF6200EE),
+            primary = Color(0xFFBB86FC),
+            onPrimary = Color(0xFF1A0050),
+            primaryContainer = Color(0xFF3700B3),
+            secondary = Color(0xFF03DAC6),
             background = UniBlack,
-            surface = UniGray900
+            surface = UniGray900,
+            onBackground = UniWhite,
+            onSurface = UniGray200,
+            surfaceVariant = UniGray800,
+            outline = UniGray600
         ) else lightColorScheme(
             primary = Color(0xFF6200EE),
+            onPrimary = Color.White,
+            primaryContainer = Color(0xFFEDE7F6),
+            secondary = Color(0xFF03DAC6),
             background = UniWhite,
-            surface = UniGray100
+            surface = UniGray100,
+            onBackground = UniGray900,
+            onSurface = UniGray800,
+            surfaceVariant = UniGray200,
+            outline = UniGray400
         )
     }
 

@@ -1,8 +1,7 @@
 package com.unistream.gallery.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +64,23 @@ fun GalleryScreen(
                     onHiddenVaultClick = onNavigateToHiddenVault,
                     onBack = onBack
                 )
+            },
+            // Selection action bar as bottom bar
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = uiState.isSelectionMode && uiState.selectedMedia.isNotEmpty(),
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                ) {
+                    SelectionActionBar(
+                        selectedCount = uiState.selectedMedia.size,
+                        onHide = viewModel::hideSelectedMedia,
+                        onShare = { /* share intent */ },
+                        onDelete = { /* confirm delete dialog */ },
+                        onSelectAll = { viewModel.selectAll() },
+                        onClear = viewModel::clearSelection
+                    )
+                }
             }
         ) { paddingValues ->
             Box(
@@ -73,10 +91,9 @@ fun GalleryScreen(
             ) {
                 when {
                     uiState.isLoading -> {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        GalleryLoadingState()
                     }
                     else -> {
-                        // Keep filter chips visible even if current filter has no content
                         LazyVerticalStaggeredGrid(
                             columns = StaggeredGridCells.Fixed(2),
                             modifier = Modifier.fillMaxSize(),
@@ -93,7 +110,7 @@ fun GalleryScreen(
 
                             if (uiState.filteredMedia.isEmpty()) {
                                 item(span = StaggeredGridItemSpan.FullLine) {
-                                    EmptyGalleryPlaceholder()
+                                    EmptyGalleryPlaceholder(currentFilter = uiState.currentFilter)
                                 }
                             } else {
                                 items(
@@ -120,7 +137,6 @@ fun GalleryScreen(
             }
         }
 
-        // Filter Bottom Sheet
         if (showFilterSheet) {
             GalleryFilterSheet(
                 currentFilter = uiState.currentFilter,
@@ -132,6 +148,80 @@ fun GalleryScreen(
         }
     }
 }
+
+// ─── Selection Action Bar ─────────────────────────────────────────────────────
+
+@Composable
+private fun SelectionActionBar(
+    selectedCount: Int,
+    onHide: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+    onSelectAll: () -> Unit,
+    onClear: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+        tonalElevation = 4.dp
+    ) {
+        Column(modifier = Modifier.navigationBarsPadding()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ActionBarButton(
+                    icon = Icons.Default.SelectAll,
+                    label = "All",
+                    onClick = onSelectAll
+                )
+                ActionBarButton(
+                    icon = Icons.Outlined.Lock,
+                    label = "Hide",
+                    onClick = onHide
+                )
+                ActionBarButton(
+                    icon = Icons.Default.Share,
+                    label = "Share",
+                    onClick = onShare
+                )
+                ActionBarButton(
+                    icon = Icons.Default.Delete,
+                    label = "Delete",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = onDelete
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionBarButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
+    }
+}
+
+// ─── Top Bar ─────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,26 +242,20 @@ private fun GalleryTopBar(
 ) {
     if (isSelectionMode) {
         TopAppBar(
-            title = { Text("$selectedCount selected") },
+            title = {
+                Text(
+                    "$selectedCount selected",
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
             navigationIcon = {
                 IconButton(onClick = onClearSelection) {
                     Icon(Icons.Default.Close, contentDescription = "Clear selection")
                 }
             },
-            actions = {
-                IconButton(onClick = onHideSelected) {
-                    Icon(
-                        imageVector = Icons.Outlined.Lock,
-                        contentDescription = "Hide selected"
-                    )
-                }
-                IconButton(onClick = {}) {
-                    Icon(Icons.Default.Share, contentDescription = "Share")
-                }
-                IconButton(onClick = {}) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete")
-                }
-            }
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
         )
     } else {
         Column {
@@ -181,7 +265,7 @@ private fun GalleryTopBar(
                         TextField(
                             value = searchQuery,
                             onValueChange = onSearchChange,
-                            placeholder = { Text("Search photos, videos...") },
+                            placeholder = { Text("Search photos, videos…") },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
@@ -193,14 +277,12 @@ private fun GalleryTopBar(
                     }
                 },
                 navigationIcon = {
-                    if (searchExpanded) {
-                        IconButton(onClick = { onSearchChange(""); onSearchClick() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
-                    } else {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
+                    IconButton(
+                        onClick = if (searchExpanded) {
+                            { onSearchChange(""); onSearchClick() }
+                        } else onBack
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -222,6 +304,8 @@ private fun GalleryTopBar(
     }
 }
 
+// ─── Media Card ──────────────────────────────────────────────────────────────
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GalleryMediaCard(
@@ -238,21 +322,23 @@ fun GalleryMediaCard(
         media.width.toFloat() / media.height.toFloat()
     else 0.75f
 
+    val cardScale by animateFloatAsState(
+        targetValue = if (isSelected) 0.93f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "card_scale"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .scale(cardScale)
             .aspectRatio(aspectRatio.coerceIn(0.5f, 2f))
             .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         val imageRequest = ImageRequest.Builder(context)
             .data(media.uri)
-            .apply {
-                if (media.isVideo) videoFrameMillis(1000)
-            }
+            .apply { if (media.isVideo) videoFrameMillis(1000) }
             .crossfade(true)
             .build()
 
@@ -268,19 +354,28 @@ fun GalleryMediaCard(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
                 contentAlignment = Alignment.TopEnd
             ) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Selected",
-                    tint = Color.White,
-                    modifier = Modifier.padding(8.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
         }
 
-        // Video indicator
+        // Video duration badge
         if (media.isVideo) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -288,19 +383,14 @@ fun GalleryMediaCard(
             ) {
                 Row(
                     modifier = Modifier
-                        .padding(8.dp)
+                        .padding(6.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                        .background(Color.Black.copy(alpha = 0.65f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Video",
-                        tint = Color.White,
-                        modifier = Modifier.size(12.dp)
-                    )
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
                     Text(
                         text = formatDuration(media.duration),
                         style = MaterialTheme.typography.labelSmall.copy(color = Color.White)
@@ -309,37 +399,25 @@ fun GalleryMediaCard(
             }
         }
 
-        // GIF indicator
+        // GIF badge
         if (media.isGif) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.TopStart
-            ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
                 Text(
                     text = "GIF",
                     modifier = Modifier
-                        .padding(6.dp)
+                        .padding(5.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(Color(0xFFFF7043).copy(alpha = 0.9f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold)
                 )
             }
         }
 
         // Favorite indicator
         if (isFavorite) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.TopEnd
-            ) {
-                IconButton(
-                    onClick = onFavoriteClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
+                IconButton(onClick = onFavoriteClick, modifier = Modifier.size(32.dp)) {
                     Icon(
                         Icons.Default.Favorite,
                         contentDescription = "Favorite",
@@ -351,6 +429,8 @@ fun GalleryMediaCard(
         }
     }
 }
+
+// ─── Filter Chips ─────────────────────────────────────────────────────────────
 
 @Composable
 private fun GalleryFilterChips(
@@ -380,6 +460,8 @@ private fun GalleryFilterChips(
     }
 }
 
+// ─── Filter Sheet ─────────────────────────────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GalleryFilterSheet(
@@ -393,7 +475,6 @@ private fun GalleryFilterSheet(
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Filter by Type", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
-            // Filter options
             listOf(
                 MediaFilter.ALL to "All Media",
                 MediaFilter.IMAGES to "Images Only",
@@ -417,7 +498,7 @@ private fun GalleryFilterSheet(
             listOf(
                 com.unistream.gallery.data.SortOrder.DATE_DESC to "Newest First",
                 com.unistream.gallery.data.SortOrder.DATE_ASC to "Oldest First",
-                com.unistream.gallery.data.SortOrder.NAME_ASC to "Name A-Z",
+                com.unistream.gallery.data.SortOrder.NAME_ASC to "Name A–Z",
                 com.unistream.gallery.data.SortOrder.SIZE_DESC to "Largest First"
             ).forEach { (sort, label) ->
                 ListItem(
@@ -433,21 +514,57 @@ private fun GalleryFilterSheet(
     }
 }
 
+// ─── Empty / Loading States ───────────────────────────────────────────────────
+
 @Composable
-private fun EmptyGalleryPlaceholder() {
+private fun GalleryLoadingState() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            Text(
+                "Loading media…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyGalleryPlaceholder(currentFilter: MediaFilter) {
+    val message = when (currentFilter) {
+        MediaFilter.IMAGES -> "No photos found"
+        MediaFilter.VIDEOS -> "No videos found"
+        MediaFilter.GIFS -> "No GIFs found"
+        MediaFilter.SCREEN_RECORDINGS -> "No screen recordings found"
+        else -> "No media found"
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "empty")
+    val iconAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.45f,
+        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
+        label = "alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 80.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(
                 Icons.Default.PhotoLibrary,
                 contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
+                modifier = Modifier.size(72.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = iconAlpha)
             )
-            Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "No media found",
+                message,
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f)
             )
             Text(
                 "Grant storage permission to browse your media",
@@ -457,6 +574,8 @@ private fun EmptyGalleryPlaceholder() {
         }
     }
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 private fun formatDuration(ms: Long): String {
     val seconds = (ms / 1000) % 60
