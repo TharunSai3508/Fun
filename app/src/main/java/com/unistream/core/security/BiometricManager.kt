@@ -21,38 +21,58 @@ class BiometricAuthManager @Inject constructor(
         NOT_SUPPORTED
     }
 
+    private val authenticators =
+        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+
     fun getBiometricStatus(): BiometricStatus {
+
         val manager = BiometricManager.from(context)
-        return when (manager.canAuthenticate(
-            BiometricManager.Authenticators.BIOMETRIC_STRONG or
-            BiometricManager.Authenticators.BIOMETRIC_WEAK
-        )) {
-            BiometricManager.BIOMETRIC_SUCCESS -> BiometricStatus.AVAILABLE
-            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> BiometricStatus.NOT_ENROLLED
+
+        return when (manager.canAuthenticate(authenticators)) {
+
+            BiometricManager.BIOMETRIC_SUCCESS ->
+                BiometricStatus.AVAILABLE
+
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ->
+                BiometricStatus.NOT_ENROLLED
+
             BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE,
-            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> BiometricStatus.HARDWARE_UNAVAILABLE
-            else -> BiometricStatus.NOT_SUPPORTED
+            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ->
+                BiometricStatus.HARDWARE_UNAVAILABLE
+
+            else ->
+                BiometricStatus.NOT_SUPPORTED
         }
     }
 
     fun authenticate(
         activity: FragmentActivity,
         title: String = "Unistream",
-        subtitle: String = "Verify your identity to continue",
-        negativeButtonText: String = "Use PIN",
+        subtitle: String = "Verify your identity",
         onSuccess: () -> Unit,
         onError: (Int, String) -> Unit = { _, _ -> },
         onFailed: () -> Unit = {}
     ) {
-        val executor = ContextCompat.getMainExecutor(context)
+
+        val executor = ContextCompat.getMainExecutor(activity)
 
         val callback = object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+
+            override fun onAuthenticationSucceeded(
+                result: BiometricPrompt.AuthenticationResult
+            ) {
                 onSuccess()
             }
-            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+
+            override fun onAuthenticationError(
+                errorCode: Int,
+                errString: CharSequence
+            ) {
                 onError(errorCode, errString.toString())
             }
+
             override fun onAuthenticationFailed() {
                 onFailed()
             }
@@ -63,11 +83,7 @@ class BiometricAuthManager @Inject constructor(
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setNegativeButtonText(negativeButtonText)
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                BiometricManager.Authenticators.BIOMETRIC_WEAK
-            )
+            .setAllowedAuthenticators(authenticators)
             .build()
 
         prompt.authenticate(promptInfo)

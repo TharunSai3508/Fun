@@ -82,6 +82,9 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation("org.jspecify:jspecify:0.3.0")
 
+    // Ui
+    implementation("com.airbnb.android:lottie-compose:6.4.0")
+
     // Compose BOM
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)

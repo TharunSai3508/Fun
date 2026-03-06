@@ -5,17 +5,20 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,37 +34,34 @@ fun HomeScreen(
     onNavigateToNovel: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF1A0A2E),
-                        Color(0xFF0D0D0D)
-                    ),
+                    colors = listOf(Color(0xFF1A0A2E), Color(0xFF0D0D0D)),
                     radius = 1200f
                 )
             )
     ) {
-        // Animated background dots / particles (decorative)
-        AnimatedBackground()
+
+        PremiumAnimatedBackground()
+        FloatingParticles()
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
             Spacer(modifier = Modifier.height(48.dp))
 
-            // App Logo + Name
             AppHeader()
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Three Module Cards
             Text(
                 text = "Choose Your Experience",
                 style = MaterialTheme.typography.titleMedium.copy(
@@ -72,7 +72,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Gallery Card
             ModuleCard(
                 title = "Gallery",
                 subtitle = "Pinterest-style media browser",
@@ -83,7 +82,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Streaming Card
             ModuleCard(
                 title = "Stream",
                 subtitle = "Netflix-style video platform",
@@ -94,7 +92,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // WebNovel Card
             ModuleCard(
                 title = "Novels",
                 subtitle = "Webnovel-style reading platform",
@@ -115,7 +112,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Footer
             Text(
                 text = "UNISTREAM • v1.0",
                 style = MaterialTheme.typography.labelSmall.copy(
@@ -123,6 +119,7 @@ fun HomeScreen(
                     letterSpacing = 3.sp
                 )
             )
+
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
@@ -130,21 +127,22 @@ fun HomeScreen(
 
 @Composable
 private fun AppHeader() {
+
+    val infiniteTransition = rememberInfiniteTransition(label = "logo")
+
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Animated logo icon
-        val infiniteTransition = rememberInfiniteTransition(label = "logo_pulse")
-        val scale by infiniteTransition.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.05f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2000, easing = EaseInOut),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "scale"
-        )
 
         Box(
             modifier = Modifier
@@ -165,6 +163,8 @@ private fun AppHeader() {
                 tint = Color.White
             )
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "UNISTREAM",
@@ -194,10 +194,13 @@ private fun ModuleCard(
     gradient: List<Color>,
     onClick: () -> Unit
 ) {
-    var pressed by remember { mutableStateOf(false) }
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.97f else 1f,
-        animationSpec = tween(100),
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = tween(120),
         label = "card_scale"
     )
 
@@ -208,13 +211,12 @@ private fun ModuleCard(
             .clip(RoundedCornerShape(20.dp))
             .background(Brush.horizontalGradient(gradient))
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                pressed = true
-                onClick()
-            }
+                interactionSource = interactionSource,
+                indication = rememberRipple(),
+                onClick = onClick
+            )
     ) {
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -222,6 +224,7 @@ private fun ModuleCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+
             Box(
                 modifier = Modifier
                     .size(56.dp)
@@ -238,6 +241,7 @@ private fun ModuleCard(
             }
 
             Column(modifier = Modifier.weight(1f)) {
+
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge.copy(
@@ -245,6 +249,7 @@ private fun ModuleCard(
                         fontWeight = FontWeight.Bold
                     )
                 )
+
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -254,7 +259,7 @@ private fun ModuleCard(
             }
 
             Icon(
-                imageVector = Icons.Default.ArrowForwardIos,
+                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                 contentDescription = "Open $title",
                 tint = Color.White.copy(alpha = 0.7f),
                 modifier = Modifier.size(20.dp)
@@ -264,33 +269,70 @@ private fun ModuleCard(
 }
 
 @Composable
-private fun AnimatedBackground() {
+private fun PremiumAnimatedBackground() {
+
     val infiniteTransition = rememberInfiniteTransition(label = "bg")
-    val offset1 by infiniteTransition.animateFloat(
+
+    val offset by infiniteTransition.animateFloat(
+        initialValue = -200f,
+        targetValue = 200f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(6000, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "offset"
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+
+        val width = size.width
+        val height = size.height
+
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0x557C4DFF), Color.Transparent)
+            ),
+            radius = width * 0.7f,
+            center = Offset(width * 0.2f, height * 0.3f + offset)
+        )
+
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0x55E91E8C), Color.Transparent)
+            ),
+            radius = width * 0.6f,
+            center = Offset(width * 0.8f, height * 0.7f - offset)
+        )
+    }
+}
+
+@Composable
+private fun FloatingParticles() {
+
+    val infiniteTransition = rememberInfiniteTransition(label = "particles")
+
+    val offset by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 30f,
+        targetValue = 40f,
         animationSpec = infiniteRepeatable(
             animation = tween(4000, easing = EaseInOut),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "offset1"
+        label = "particleMove"
     )
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        drawCircle(
-            color = Color(0x157C4DFF),
-            radius = 300.dp.toPx(),
-            center = Offset(size.width * 0.1f, size.height * 0.2f + offset1)
-        )
-        drawCircle(
-            color = Color(0x10E91E8C),
-            radius = 250.dp.toPx(),
-            center = Offset(size.width * 0.9f, size.height * 0.7f - offset1)
-        )
-        drawCircle(
-            color = Color(0x10E50914),
-            radius = 200.dp.toPx(),
-            center = Offset(size.width * 0.5f, size.height * 0.5f + offset1 * 0.5f)
-        )
+
+        repeat(20) {
+
+            drawCircle(
+                color = Color.White.copy(alpha = 0.05f),
+                radius = 2.dp.toPx(),
+                center = Offset(
+                    x = size.width * Math.random().toFloat(),
+                    y = size.height * Math.random().toFloat() + offset
+                )
+            )
+        }
     }
 }

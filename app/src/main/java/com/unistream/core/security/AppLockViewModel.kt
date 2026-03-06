@@ -36,31 +36,29 @@ class AppLockViewModel @Inject constructor(
         }
     }
 
-    fun authenticate(activity: Context) {
-        val fragmentActivity = activity as? FragmentActivity ?: return
+    fun authenticate(activity: FragmentActivity) {
 
         if (!securityPreferences.isBiometricEnabled) return
 
         when (biometricAuthManager.getBiometricStatus()) {
+
             BiometricAuthManager.BiometricStatus.AVAILABLE -> {
+
                 biometricAuthManager.authenticate(
-                    activity = fragmentActivity,
-                    title = "Unlock Unistream",
-                    subtitle = "Use fingerprint/face to access the app",
-                    negativeButtonText = "Use PIN",
+                    activity = activity,
                     onSuccess = { _isLocked.value = false },
                     onError = { _, message -> _authError.value = message }
                 )
             }
-            BiometricAuthManager.BiometricStatus.NOT_ENROLLED -> {
-                _authError.value = "No biometric enrolled on device. Configure it in Settings."
-            }
-            BiometricAuthManager.BiometricStatus.HARDWARE_UNAVAILABLE -> {
+
+            BiometricAuthManager.BiometricStatus.NOT_ENROLLED ->
+                _authError.value = "No biometric enrolled"
+
+            BiometricAuthManager.BiometricStatus.HARDWARE_UNAVAILABLE ->
                 _authError.value = "Biometric hardware unavailable"
-            }
-            BiometricAuthManager.BiometricStatus.NOT_SUPPORTED -> {
-                _authError.value = "Biometric not supported on this device"
-            }
+
+            BiometricAuthManager.BiometricStatus.NOT_SUPPORTED ->
+                _authError.value = "Biometric not supported"
         }
     }
 

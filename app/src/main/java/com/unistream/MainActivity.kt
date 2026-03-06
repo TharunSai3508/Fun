@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,22 +17,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModelProvider
 import com.unistream.core.navigation.AppNavigation
 import com.unistream.core.security.AppLockViewModel
 import com.unistream.core.ui.theme.UniStreamTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    private lateinit var appLockViewModel: AppLockViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
+
         val splashScreen = installSplashScreen()
+
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        appLockViewModel = ViewModelProvider(this)[AppLockViewModel::class.java]
+
         setContent {
-            val appLockViewModel: AppLockViewModel = hiltViewModel()
+
             val isAppLocked by appLockViewModel.isLocked.collectAsState()
 
             splashScreen.setKeepOnScreenCondition {
@@ -44,11 +51,14 @@ class MainActivity : ComponentActivity() {
 
             UniStreamTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+
                     AppNavigation(
                         isAppLocked = isAppLocked,
+
                         onBiometricAuth = {
                             appLockViewModel.authenticate(this)
                         },
+
                         onPinAuth = { pin ->
                             appLockViewModel.authenticateWithPin(pin)
                         }
@@ -60,23 +70,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Lock immediately when app goes to background.
-        // Can be expanded later to respect configured timeout.
-        val appLockViewModel: AppLockViewModel = androidx.lifecycle.ViewModelProvider(this)[AppLockViewModel::class.java]
+
+        // Lock app when going background
         appLockViewModel.lock()
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun ComponentActivity.RequestMediaPermissionsOnFirstLaunch() {
+private fun FragmentActivity.RequestMediaPermissionsOnFirstLaunch() {
+
     val permissions = remember {
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             arrayOf(
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO
             )
         } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            )
         }
     }
 
@@ -85,9 +98,15 @@ private fun ComponentActivity.RequestMediaPermissionsOnFirstLaunch() {
     ) { }
 
     LaunchedEffect(Unit) {
+
         val missing = permissions.filter {
-            ContextCompat.checkSelfPermission(this@RequestMediaPermissionsOnFirstLaunch, it) != PackageManager.PERMISSION_GRANTED
+
+            ContextCompat.checkSelfPermission(
+                this@RequestMediaPermissionsOnFirstLaunch,
+                it
+            ) != PackageManager.PERMISSION_GRANTED
         }
+
         if (missing.isNotEmpty()) {
             launcher.launch(missing.toTypedArray())
         }
