@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,7 +35,6 @@ private val StreamBg = Color(0xFF0D0D0D)
 private val StreamSurface = Color(0xFF1A1A1A)
 private val StreamRed = Color(0xFFE50914)
 
-// ─── Category definition ──────────────────────────────────────────────────────
 private val CATEGORIES = listOf("All", "Movies", "Series", "Sports", "Music", "Kids")
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -45,17 +45,56 @@ fun StreamingHomeScreen(
     onBack: () -> Unit,
     viewModel: StreamingViewModel = hiltViewModel()
 ) {
+
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
+
     var selectedCategory by remember { mutableIntStateOf(0) }
     var searchExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    /*
+     * Netflix-style filtering
+     */
+    val filteredVideos = remember(uiState.localVideos, selectedCategory) {
+
+        when (CATEGORIES[selectedCategory]) {
+
+            "Movies" ->
+                uiState.localVideos.filter { it.title.contains("movie", true) }
+
+            "Series" ->
+                uiState.localVideos.filter {
+                    it.title.contains("episode", true) ||
+                            it.title.contains("series", true)
+                }
+
+            "Sports" ->
+                uiState.localVideos.filter { it.title.contains("sport", true) }
+
+            "Music" ->
+                uiState.localVideos.filter {
+                    it.title.contains("music", true) ||
+                            it.title.contains("song", true)
+                }
+
+            "Kids" ->
+                uiState.localVideos.filter {
+                    it.title.contains("kids", true) ||
+                            it.title.contains("cartoon", true)
+                }
+
+            else -> uiState.localVideos
+        }
+    }
+
     StreamingTheme {
+
         Scaffold(
             containerColor = StreamBg,
             topBar = {
                 Column {
+
                     StreamingTopBar(
                         searchExpanded = searchExpanded,
                         searchQuery = searchQuery,
@@ -67,8 +106,9 @@ fun StreamingHomeScreen(
                         onBack = onBack,
                         onAddUrl = { viewModel.showUrlDialog(true) }
                     )
-                    // Category tabs
+
                     AnimatedVisibility(visible = !searchExpanded) {
+
                         StreamingCategoryTabs(
                             categories = CATEGORIES,
                             selectedIndex = selectedCategory,
@@ -78,35 +118,50 @@ fun StreamingHomeScreen(
                 }
             }
         ) { paddingValues ->
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                // Hero Banner
+
                 item {
+
                     StreamingHeroBanner(
-                        videos = uiState.localVideos.take(5),
+                        videos = filteredVideos.take(5),
                         onPlayClick = { source ->
+
                             viewModel.recordWatch(source)
                             onNavigateToPlayer("local", source.uri)
                         }
                     )
                 }
 
-                // Continue Watching
                 if (uiState.continueWatching.isNotEmpty()) {
+
                     item {
-                        ContentSection(title = "Continue Watching", icon = Icons.Default.PlayCircle) {
+
+                        ContentSection(
+                            title = "Continue Watching",
+                            icon = Icons.Default.PlayCircle
+                        ) {
+
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+
                                 items(uiState.continueWatching) { history ->
+
                                     ContinueWatchingCard(
                                         history = history,
-                                        onClick = { onNavigateToPlayer(history.sourceType, history.sourceUri) }
+                                        onClick = {
+                                            onNavigateToPlayer(
+                                                history.sourceType,
+                                                history.sourceUri
+                                            )
+                                        }
                                     )
                                 }
                             }
@@ -114,15 +169,22 @@ fun StreamingHomeScreen(
                     }
                 }
 
-                // My Playlists
                 if (uiState.playlists.isNotEmpty()) {
+
                     item {
-                        ContentSection(title = "My Playlists", icon = Icons.Default.VideoLibrary) {
+
+                        ContentSection(
+                            title = "My Playlists",
+                            icon = Icons.Default.VideoLibrary
+                        ) {
+
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+
                                 items(uiState.playlists) { playlist ->
+
                                     PlaylistCard(
                                         name = playlist.name,
                                         thumbnailUri = playlist.thumbnailUri,
@@ -134,20 +196,32 @@ fun StreamingHomeScreen(
                     }
                 }
 
-                // From Device
-                if (uiState.localVideos.isNotEmpty()) {
+                if (filteredVideos.isNotEmpty()) {
+
                     item {
-                        ContentSection(title = "From Device", icon = Icons.Default.Smartphone) {
+
+                        ContentSection(
+                            title = "From Device",
+                            icon = Icons.Default.Smartphone
+                        ) {
+
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                items(uiState.localVideos.take(20)) { source ->
+
+                                items(filteredVideos.take(20)) { source ->
+
                                     VideoCard(
                                         source = source,
                                         onClick = {
+
                                             viewModel.recordWatch(source)
-                                            onNavigateToPlayer("local", source.uri)
+
+                                            onNavigateToPlayer(
+                                                "local",
+                                                source.uri
+                                            )
                                         }
                                     )
                                 }
@@ -156,27 +230,41 @@ fun StreamingHomeScreen(
                     }
                 }
 
-                // Empty state
-                if (!uiState.isLoading && uiState.localVideos.isEmpty()) {
-                    item { StreamingEmptyState(onAddUrl = { viewModel.showUrlDialog(true) }) }
+                if (!uiState.isLoading && filteredVideos.isEmpty()) {
+
+                    item {
+
+                        StreamingEmptyState(
+                            onAddUrl = { viewModel.showUrlDialog(true) }
+                        )
+                    }
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         }
 
-        // URL Input Dialog
         if (uiState.showUrlDialog) {
+
             StreamUrlDialog(
                 urlInput = uiState.urlInput,
                 onUrlChange = viewModel::setUrlInput,
                 onPlay = { url ->
+
                     scope.launch {
+
                         val source = viewModel.prepareUrlSource(url)
+
                         if (source != null) {
+
                             viewModel.showUrlDialog(false)
+
                             viewModel.recordWatch(source)
-                            onNavigateToPlayer(source.type.name, source.uri)
+
+                            onNavigateToPlayer(
+                                source.type.name,
+                                source.uri
+                            )
                         }
                     }
                 },
