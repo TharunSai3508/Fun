@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unistream.webnovel.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class NovelLibraryUiState(
@@ -46,30 +48,64 @@ class NovelViewModel @Inject constructor(
     }
 
     private fun loadLibrary() {
+
         viewModelScope.launch {
             repository.getAllNovels().collect { novels ->
-                _libraryState.update { it.copy(novels = novels, isLoading = false) }
+                _libraryState.update {
+                    it.copy(
+                        novels = novels,
+                        isLoading = false
+                    )
+                }
             }
         }
+
         viewModelScope.launch {
             repository.getFavoriteNovels().collect { favorites ->
-                _libraryState.update { it.copy(favoriteNovels = favorites) }
+                _libraryState.update {
+                    it.copy(favoriteNovels = favorites)
+                }
             }
         }
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Import Novel From URL
+    // ─────────────────────────────────────────────────────────────
+
     fun importNovel(url: String) {
+
         viewModelScope.launch {
+
+            if (url.isBlank()) {
+                _importState.value = ImportState.Error("URL cannot be empty")
+                return@launch
+            }
+
+            if (!url.startsWith("http")) {
+                _importState.value = ImportState.Error("Invalid URL")
+                return@launch
+            }
+
             _importState.value = ImportState.Loading
+
             try {
-                val novelId = repository.importNovel(url)
+
+                val novelId = withContext(Dispatchers.IO) {
+                    repository.importNovel(url)
+                }
+
                 if (novelId != null) {
                     _importState.value = ImportState.Success(novelId)
                 } else {
-                    _importState.value = ImportState.Error("Could not parse the novel from this URL. Try a different source.")
+                    _importState.value =
+                        ImportState.Error("Could not parse the novel from this URL.")
                 }
+
             } catch (e: Exception) {
-                _importState.value = ImportState.Error(e.message ?: "Import failed")
+
+                _importState.value =
+                    ImportState.Error(e.message ?: "Import failed")
             }
         }
     }
@@ -78,82 +114,156 @@ class NovelViewModel @Inject constructor(
         _importState.value = ImportState.Idle
     }
 
-    // ── Reader Functions ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // Reader Functions
+    // ─────────────────────────────────────────────────────────────
+
     fun loadNovelForReading(novelId: Long, chapterId: Long) {
+
         viewModelScope.launch {
+
             _readerState.update { it.copy(isLoading = true) }
 
-            // Load chapters
             repository.getChapters(novelId).collect { chapters ->
                 _readerState.update { it.copy(chapters = chapters) }
             }
         }
 
         viewModelScope.launch {
-            // Load bookmarks
+
             repository.getBookmarks(novelId).collect { bookmarks ->
                 _readerState.update { it.copy(bookmarks = bookmarks) }
             }
         }
 
         viewModelScope.launch {
-            val progress = repository.getReadingProgress(novelId)
-            _readerState.update { it.copy(readingProgress = progress, isLoading = false) }
 
-            // Load the specific chapter (or last read)
-            val targetChapterId = if (chapterId > 0) chapterId else progress?.lastChapterId ?: 0L
+            val progress = repository.getReadingProgress(novelId)
+
+            _readerState.update {
+                it.copy(
+                    readingProgress = progress,
+                    isLoading = false
+                )
+            }
+
+            val targetChapterId =
+                if (chapterId > 0)
+                    chapterId
+                else
+                    progress?.lastChapterId ?: 0L
+
             if (targetChapterId > 0) {
+
                 loadChapter(targetChapterId)
+
             } else {
-                // Load first chapter
-                val firstChapter = _readerState.value.chapters.firstOrNull()
-                if (firstChapter != null) loadChapter(firstChapter.id)
+
+                val firstChapter =
+                    _readerState.value.chapters.firstOrNull()
+
+                if (firstChapter != null)
+                    loadChapter(firstChapter.id)
             }
         }
     }
 
     fun loadChapter(chapterId: Long) {
+
         viewModelScope.launch {
-            _readerState.update { it.copy(isDownloadingChapter = true) }
+
+            _readerState.update {
+                it.copy(isDownloadingChapter = true)
+            }
+
             val chapter = repository.getChapterById(chapterId)
+
             if (chapter != null) {
-                val downloadedChapter = if (!chapter.isDownloaded) {
-                    repository.downloadChapter(chapter)
-                } else chapter
-                _readerState.update { it.copy(currentChapter = downloadedChapter, isDownloadingChapter = false) }
+
+                val downloadedChapter =
+                    if (!chapter.isDownloaded)
+                        repository.downloadChapter(chapter)
+                    else
+                        chapter
+
+                _readerState.update {
+                    it.copy(
+                        currentChapter = downloadedChapter,
+                        isDownloadingChapter = false
+                    )
+                }
+
             } else {
-                _readerState.update { it.copy(isDownloadingChapter = false) }
+
+                _readerState.update {
+                    it.copy(isDownloadingChapter = false)
+                }
             }
         }
     }
 
     fun navigateToNextChapter() {
+
         val current = _readerState.value.currentChapter ?: return
+
         val chapters = _readerState.value.chapters
-        val currentIndex = chapters.indexOfFirst { it.id == current.id }
-        val nextChapter = chapters.getOrNull(currentIndex + 1) ?: return
+
+        val currentIndex =
+            chapters.indexOfFirst { it.id == current.id }
+
+        val nextChapter =
+            chapters.getOrNull(currentIndex + 1) ?: return
+
         loadChapter(nextChapter.id)
     }
 
     fun navigateToPreviousChapter() {
+
         val current = _readerState.value.currentChapter ?: return
+
         val chapters = _readerState.value.chapters
-        val currentIndex = chapters.indexOfFirst { it.id == current.id }
-        val prevChapter = chapters.getOrNull(currentIndex - 1) ?: return
+
+        val currentIndex =
+            chapters.indexOfFirst { it.id == current.id }
+
+        val prevChapter =
+            chapters.getOrNull(currentIndex - 1) ?: return
+
         loadChapter(prevChapter.id)
     }
 
     fun saveProgress(novelId: Long, scrollOffset: Int) {
+
         val chapter = _readerState.value.currentChapter ?: return
+
         viewModelScope.launch {
-            repository.saveReadingProgress(novelId, chapter.id, chapter.chapterNumber, scrollOffset)
+
+            repository.saveReadingProgress(
+                novelId,
+                chapter.id,
+                chapter.chapterNumber,
+                scrollOffset
+            )
         }
     }
 
-    fun addBookmark(novelId: Long, selectedText: String, note: String = "") {
+    fun addBookmark(
+        novelId: Long,
+        selectedText: String,
+        note: String = ""
+    ) {
+
         val chapter = _readerState.value.currentChapter ?: return
+
         viewModelScope.launch {
-            repository.addBookmark(novelId, chapter.id, chapter.chapterNumber, selectedText, note)
+
+            repository.addBookmark(
+                novelId,
+                chapter.id,
+                chapter.chapterNumber,
+                selectedText,
+                note
+            )
         }
     }
 
@@ -162,13 +272,20 @@ class NovelViewModel @Inject constructor(
     }
 
     fun toggleFavorite(novel: NovelEntity) {
+
         viewModelScope.launch {
-            repository.toggleFavorite(novel.id, !novel.isFavorite)
+
+            repository.toggleFavorite(
+                novel.id,
+                !novel.isFavorite
+            )
         }
     }
 
     fun deleteNovel(novel: NovelEntity) {
+
         viewModelScope.launch {
+
             repository.deleteNovel(novel)
         }
     }

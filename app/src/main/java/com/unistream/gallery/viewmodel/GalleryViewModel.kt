@@ -137,4 +137,22 @@ class GalleryViewModel @Inject constructor(
             loadMedia()
         }
     }
+
+    fun importFromUrl(url: String) = viewModelScope.launch {
+        repository.importImageFromUrl(url)
+        loadMedia()
+    }
+
+    fun selectAll() {
+
+        _uiState.update { state ->
+
+            val allIds = state.filteredMedia.map { media -> media.id }.toSet()
+
+            state.copy(
+                selectedMedia = allIds,
+                isSelectionMode = true
+            )
+        }
+    }
 }

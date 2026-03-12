@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,194 +20,179 @@ data class ParsedChapter(
     val number: Float,
     val title: String,
     val url: String,
-    val content: String = ""  // Empty until downloaded
+    val content: String = ""
 )
 
 @Singleton
 class NovelParser @Inject constructor() {
 
     suspend fun parseNovelPage(url: String): ParsedNovel? = withContext(Dispatchers.IO) {
+
         try {
+
             val doc = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/114.0.0.0 Mobile Safari/537.36")
-                .timeout(15_000)
+                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .referrer("https://www.google.com/")
+                .timeout(20000)
+                .followRedirects(true)
                 .get()
 
-            // Try to detect site and use appropriate parser
-            val host = doc.location().let { java.net.URL(it).host }
+            val host = URL(doc.location()).host
 
             when {
-                host.contains("webnovel.com") -> parseWebnovel(doc, url)
-                host.contains("royalroad.com") -> parseRoyalRoad(doc, url)
-                host.contains("wuxiaworld.com") -> parseWuxiaWorld(doc, url)
-                host.contains("novelupdates.com") -> parseNovelUpdates(doc, url)
-                else -> parseGeneric(doc, url)
+
+                host.contains("webnovel") ->
+                    parseWebnovel(doc, url)
+
+                host.contains("royalroad") ->
+                    parseRoyalRoad(doc, url)
+
+                else ->
+                    parseGeneric(doc, url)
             }
+
         } catch (e: Exception) {
             null
         }
     }
 
-    suspend fun parseChapterContent(chapterUrl: String): String = withContext(Dispatchers.IO) {
-        try {
-            val doc = Jsoup.connect(chapterUrl)
-                .userAgent("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/114.0.0.0 Mobile Safari/537.36")
-                .timeout(15_000)
-                .get()
+    suspend fun parseChapterContent(chapterUrl: String): String =
+        withContext(Dispatchers.IO) {
 
-            val host = doc.location().let { runCatching { java.net.URL(it).host }.getOrDefault("") }
+            try {
 
-            when {
-                host.contains("webnovel.com") -> extractWebnovelChapter(doc)
-                host.contains("royalroad.com") -> extractRoyalRoadChapter(doc)
-                else -> extractGenericChapter(doc)
+                val doc = Jsoup.connect(chapterUrl)
+                    .userAgent("Mozilla/5.0")
+                    .timeout(20000)
+                    .get()
+
+                extractGenericChapter(doc)
+
+            } catch (e: Exception) {
+                "Failed to load chapter."
             }
-        } catch (e: Exception) {
-            "Failed to load chapter content. Please check your internet connection."
         }
+
+    private fun parseWebnovel(doc: Document, baseUrl: String): ParsedNovel {
+
+        val title = doc.selectFirst("h1")?.text() ?: "Unknown"
+        val author = doc.selectFirst(".author-name")?.text() ?: "Unknown"
+        val description = doc.select("p").joinToString("\n") { it.text() }
+
+        val cover = doc.selectFirst("img")?.attr("src")
+
+        val chapters = doc.select("a[href*='chapter']")
+            .mapIndexed { index, el ->
+
+                ParsedChapter(
+                    number = (index + 1).toFloat(),
+                    title = el.text(),
+                    url = normalizeUrl(el.attr("href"), baseUrl)
+                )
+            }
+            .distinctBy { it.url }
+
+        return ParsedNovel(title, author, description, cover, chapters)
     }
 
-    // ── Webnovel.com Parser ──────────────────────────────────────────────
-    private fun parseWebnovel(doc: Document, url: String): ParsedNovel {
-        val title = doc.select(".pt4.pb4.oh.mb4 h1").text()
-            .ifBlank { doc.select("h1").first()?.text() ?: "Unknown" }
-        val author = doc.select(".author-name").text().ifBlank { "Unknown" }
-        val description = doc.select(".j_synopsis p").joinToString("\n") { it.text() }
-        val coverUrl = doc.select(".g_thumb img").attr("src")
-            .let { if (it.isNotBlank()) it else null }
+    private fun parseRoyalRoad(doc: Document, baseUrl: String): ParsedNovel {
 
-        val chapterLinks = doc.select(".chapter-item a, .content-list a[href*='/chapter/']")
-        val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), url)
-            )
-        }
-        return ParsedNovel(title, author, description, coverUrl, chapters)
-    }
-
-    private fun extractWebnovelChapter(doc: Document): String {
-        return doc.select(".chapter-content p, .cha-content p, #chapter-content p")
-            .joinToString("\n\n") { it.text() }
-            .ifBlank { doc.select("p").joinToString("\n\n") { it.text() } }
-    }
-
-    // ── RoyalRoad.com Parser ─────────────────────────────────────────────
-    private fun parseRoyalRoad(doc: Document, url: String): ParsedNovel {
-        val title = doc.select("h1[property='name']").text()
-            .ifBlank { doc.select("h1").first()?.text() ?: "Unknown" }
-        val author = doc.select("span[property='name']").first()?.text() ?: "Unknown"
-        val description = doc.select(".description .hidden-content p").joinToString("\n") { it.text() }
-        val coverUrl = doc.select(".thumbnail img").attr("src").let { if (it.isNotBlank()) it else null }
-
-        val chapterLinks = doc.select("table#chapters tbody tr td a")
-        val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), "https://www.royalroad.com")
-            )
-        }
-        return ParsedNovel(title, author, description, coverUrl, chapters)
-    }
-
-    private fun extractRoyalRoadChapter(doc: Document): String {
-        return doc.select(".chapter-content p").joinToString("\n\n") { it.text() }
-    }
-
-    // ── WuxiaWorld Parser ────────────────────────────────────────────────
-    private fun parseWuxiaWorld(doc: Document, url: String): ParsedNovel {
-        val title = doc.select("h1.novel-title").text()
-            .ifBlank { doc.select("h1").first()?.text() ?: "Unknown" }
-        val author = doc.select(".author-name").text().ifBlank { "Unknown" }
-        val description = doc.select("#editdescription p").joinToString("\n") { it.text() }
-        val coverUrl = doc.select(".book-img img").attr("src").let { if (it.isNotBlank()) it else null }
-
-        val chapterLinks = doc.select(".chapter-list li a")
-        val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), url)
-            )
-        }
-        return ParsedNovel(title, author, description, coverUrl, chapters)
-    }
-
-    // ── NovelUpdates Parser ──────────────────────────────────────────────
-    private fun parseNovelUpdates(doc: Document, url: String): ParsedNovel {
-        val title = doc.select(".seriestitlenu").text()
-            .ifBlank { doc.select("h1").first()?.text() ?: "Unknown" }
+        val title = doc.selectFirst("h1")?.text() ?: "Unknown"
         val author = doc.select("a[href*='author']").first()?.text() ?: "Unknown"
-        val description = doc.select("#editdescription p").joinToString("\n") { it.text() }
-        val coverUrl = doc.select(".wpb_wrapper img").first()?.attr("src")
 
-        return ParsedNovel(title, author, description, coverUrl, emptyList())
+        val description = doc.select(".description p")
+            .joinToString("\n") { it.text() }
+
+        val cover = doc.selectFirst("img")?.attr("src")
+
+        val chapters = doc.select("a[href*='chapter']")
+            .mapIndexed { i, el ->
+
+                ParsedChapter(
+                    number = (i + 1).toFloat(),
+                    title = el.text(),
+                    url = normalizeUrl(el.attr("href"), baseUrl)
+                )
+            }
+            .distinctBy { it.url }
+
+        return ParsedNovel(title, author, description, cover, chapters)
     }
 
-    // ── Generic Parser ───────────────────────────────────────────────────
-    private fun parseGeneric(doc: Document, url: String): ParsedNovel {
-        val title = doc.title().ifBlank { "Novel" }
-        val author = doc.select("meta[name='author']").attr("content").ifBlank { "Unknown" }
-        val description = doc.select("meta[name='description']").attr("content")
-        val coverUrl = doc.select("meta[property='og:image']").attr("content").let {
-            if (it.isNotBlank()) it else null
-        }
+    private fun parseGeneric(doc: Document, baseUrl: String): ParsedNovel {
 
-        // Try to find chapter links using common patterns
-        val chapterLinks = doc.select("a[href]").filter { el ->
-            val text = el.text().lowercase()
-            val href = el.attr("href").lowercase()
-            (text.contains("chapter") || text.contains("ch.") ||
-             href.contains("chapter") || href.contains("/ch/") || href.contains("/c/")) &&
-            el.text().isNotBlank()
-        }
+        val title = doc.title()
 
-        val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = extractChapterNumber(el.text(), i),
-                title = el.text().trim(),
-                url = normalizeUrl(el.attr("href"), url)
-            )
-        }.distinctBy { it.url }.take(2000)
+        val chapters = doc.select("a[href]")
+            .filter {
 
-        return ParsedNovel(title, author, description, coverUrl, chapters)
+                val text = it.text().lowercase()
+
+                text.contains("chapter")
+                        || text.contains("ch.")
+                        || it.attr("href").contains("chapter")
+            }
+            .mapIndexed { i, el ->
+
+                ParsedChapter(
+                    number = (i + 1).toFloat(),
+                    title = el.text(),
+                    url = normalizeUrl(el.attr("href"), baseUrl)
+                )
+            }
+            .distinctBy { it.url }
+            .take(2000)
+
+        return ParsedNovel(
+            title,
+            "Unknown",
+            "",
+            null,
+            chapters
+        )
     }
 
     private fun extractGenericChapter(doc: Document): String {
-        // Try common chapter content selectors
+
         val selectors = listOf(
-            ".chapter-content", "#chapter-content", ".reading-content",
-            ".text-left", ".entry-content", "article", ".post-content",
-            "#content", ".content"
+            ".chapter-content",
+            "#chapter-content",
+            ".entry-content",
+            ".post-content",
+            ".content"
         )
 
-        for (selector in selectors) {
-            val text = doc.select("$selector p").joinToString("\n\n") { it.text() }
+        for (s in selectors) {
+
+            val text = doc.select("$s p")
+                .joinToString("\n\n") { it.text() }
+
             if (text.length > 200) return text
         }
 
-        // Fallback: get all paragraphs
-        return doc.select("p").filter { it.text().length > 50 }
+        return doc.select("p")
             .joinToString("\n\n") { it.text() }
     }
 
     private fun normalizeUrl(href: String, baseUrl: String): String {
-        return when {
-            href.startsWith("http") -> href
-            href.startsWith("//") -> "https:$href"
-            href.startsWith("/") -> {
-                val base = runCatching { java.net.URL(baseUrl) }.getOrNull()
-                if (base != null) "${base.protocol}://${base.host}$href" else href
-            }
-            else -> "$baseUrl/$href"
-        }
-    }
 
-    private fun extractChapterNumber(text: String, fallbackIndex: Int): Float {
-        val numberRegex = Regex("(?:chapter|ch\\.?)\\s*([\\d.]+)", RegexOption.IGNORE_CASE)
-        val match = numberRegex.find(text)
-        return match?.groupValues?.get(1)?.toFloatOrNull() ?: (fallbackIndex + 1).toFloat()
+        return when {
+
+            href.startsWith("http") ->
+                href
+
+            href.startsWith("//") ->
+                "https:$href"
+
+            href.startsWith("/") -> {
+
+                val base = URL(baseUrl)
+
+                "${base.protocol}://${base.host}$href"
+            }
+
+            else ->
+                "$baseUrl/$href"
+        }
     }
 }

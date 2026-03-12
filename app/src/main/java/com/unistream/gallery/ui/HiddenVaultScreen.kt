@@ -1,250 +1,378 @@
 package com.unistream.gallery.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.staggeredgrid.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.unistream.core.security.PinVerificationResult
-import com.unistream.core.security.SecurityPreferences
+import coil.compose.AsyncImage
 import com.unistream.gallery.viewmodel.GalleryViewModel
+import com.unistream.gallery.viewmodel.VaultAccessViewModel
+import java.io.File
 
 @Composable
 fun HiddenVaultScreen(
     onNavigateToMedia: (Long) -> Unit,
     onBack: () -> Unit,
-    viewModel: GalleryViewModel = hiltViewModel()
+    viewModel: GalleryViewModel = hiltViewModel(),
+    vaultAccessViewModel: VaultAccessViewModel = hiltViewModel()
 ) {
-    var isUnlocked by remember { mutableStateOf(false) }
-    var enteredPin by remember { mutableStateOf("") }
-    var showError by remember { mutableStateOf(false) }
 
     val hiddenMedia by viewModel.hiddenMedia.collectAsState()
+    val isUnlocked by vaultAccessViewModel.isUnlocked.collectAsState()
+
+    if (!vaultAccessViewModel.hasVaultPin) {
+        VaultPinSetupScreen(onBack = onBack)
+        return
+    }
 
     if (!isUnlocked) {
-        VaultUnlockScreen(
-            enteredPin = enteredPin,
-            showError = showError,
-            onPinEntered = { pin ->
-                enteredPin = pin
-                // In production: verify against SecurityPreferences
-                if (pin.length == 4) {
-                    isUnlocked = true  // Simplified for demo
-                    showError = false
-                }
-            },
-            onBack = onBack
-        )
-    } else {
-        VaultContentScreen(
-            hiddenMediaCount = hiddenMedia.size,
-            onBack = onBack
-        )
+        VaultUnlockScreen(onBack = onBack)
+        return
     }
+
+    VaultContentScreen(
+        hiddenMedia = hiddenMedia,
+        onNavigateToMedia = onNavigateToMedia,
+        onBack = onBack
+    )
 }
 
 @Composable
-private fun VaultUnlockScreen(
-    enteredPin: String,
-    showError: Boolean,
-    onPinEntered: (String) -> Unit,
-    onBack: () -> Unit
+private fun VaultPinSetupScreen(
+    onBack: () -> Unit,
+    vaultAccessViewModel: VaultAccessViewModel = hiltViewModel()
 ) {
-    var currentPin by remember { mutableStateOf("") }
+
+    var pin by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+
+    val error by vaultAccessViewModel.errorMessage.collectAsState()
+    val context = LocalContext.current
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1A1A2E), Color(0xFF16213E))
+                    listOf(
+                        Color(0xFF0F2027),
+                        Color(0xFF203A43),
+                        Color(0xFF2C5364)
+                    )
                 )
             )
     ) {
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(
-                Icons.Default.Lock,
-                contentDescription = "Vault Lock",
-                modifier = Modifier.size(72.dp),
-                tint = Color(0xFFE91E8C)
-            )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // Top Bar
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
 
-            Text(
-                "Hidden Vault",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
-            )
-
-            Text(
-                "Your private, encrypted media space",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = Color.White.copy(alpha = 0.5f)
-                ),
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(40.dp))
-
-            // PIN dots
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                repeat(4) { i ->
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(
-                                if (i < currentPin.length) Color(0xFFE91E8C)
-                                else Color.White.copy(alpha = 0.2f)
-                            )
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
                     )
                 }
+
+                Text(
+                    text = "Vault Setup",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge
+                )
             }
 
-            if (showError) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Wrong PIN", color = Color(0xFFEF5350), style = MaterialTheme.typography.bodySmall)
-            }
+            // Secure Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
 
-            Spacer(modifier = Modifier.height(32.dp))
+                Column(
+                    modifier = Modifier
+                        .padding(28.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
 
-            // Numpad
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                listOf(
-                    listOf("1", "2", "3"),
-                    listOf("4", "5", "6"),
-                    listOf("7", "8", "9"),
-                    listOf("", "0", "⌫")
-                ).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        row.forEach { key ->
-                            if (key.isEmpty()) {
-                                Spacer(modifier = Modifier.size(64.dp))
-                            } else {
-                                OutlinedButton(
-                                    onClick = {
-                                        when (key) {
-                                            "⌫" -> if (currentPin.isNotEmpty()) currentPin = currentPin.dropLast(1)
-                                            else -> {
-                                                if (currentPin.length < 4) {
-                                                    currentPin += key
-                                                    if (currentPin.length == 4) {
-                                                        onPinEntered(currentPin)
-                                                        if (showError) currentPin = ""
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.size(64.dp),
-                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp, Color.White.copy(alpha = 0.2f)
-                                    ),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                                ) {
-                                    Text(key, style = MaterialTheme.typography.titleLarge)
-                                }
-                            }
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        "Create Vault PIN",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    OutlinedTextField(
+                        value = pin,
+                        onValueChange = { pin = it.filter(Char::isDigit).take(6) },
+                        label = { Text("Enter PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = confirm,
+                        onValueChange = { confirm = it.filter(Char::isDigit).take(6) },
+                        label = { Text("Confirm PIN") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (!error.isNullOrBlank()) {
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            error!!,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            vaultAccessViewModel.setupVaultPin(pin, confirm)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Save Vault PIN")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (vaultAccessViewModel.biometricAvailable) {
+
+                        OutlinedButton(
+                            onClick = {
+                                vaultAccessViewModel.authenticateWithBiometric(context)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+
+                            Icon(Icons.Default.Fingerprint, null)
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Text("Enable Fingerprint Unlock")
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            // Security note
+            Text(
+                text = "Your vault is protected using secure local encryption.",
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        }
+    }
+}
+
+@Composable
+private fun VaultUnlockScreen(
+    onBack: () -> Unit,
+    vaultAccessViewModel: VaultAccessViewModel = hiltViewModel()
+) {
+
+    var pin by remember { mutableStateOf("") }
+    val error by vaultAccessViewModel.errorMessage.collectAsState()
+    val context = LocalContext.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF121212))
+    ) {
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+
+            Icon(
+                Icons.Default.Lock,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(56.dp)
+            )
+
+            Text(
+                "Unlock Hidden Vault",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+
+            OutlinedTextField(
+                value = pin,
+                onValueChange = { pin = it.filter(Char::isDigit).take(6) },
+                label = { Text("Vault PIN") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.NumberPassword
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (!error.isNullOrBlank()) {
+                Text(error!!, color = Color.Red)
+            }
+
+            Button(
+                onClick = { vaultAccessViewModel.authenticateWithPin(pin) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Unlock with PIN")
+            }
+
+            if (vaultAccessViewModel.biometricAvailable) {
+
+                Button(
+                    onClick = {
+                        vaultAccessViewModel.authenticateWithBiometric(context)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+
+                        Icon(Icons.Default.Fingerprint, null)
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text("Unlock with Fingerprint")
+                    }
+                }
+            }
+
             TextButton(onClick = onBack) {
-                Text("Cancel", color = Color.White.copy(alpha = 0.6f))
+                Text("Back")
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VaultContentScreen(
-    hiddenMediaCount: Int,
+    hiddenMedia: List<com.unistream.gallery.data.HiddenMediaEntity>,
+    onNavigateToMedia: (Long) -> Unit,
     onBack: () -> Unit
 ) {
+
     Scaffold(
         topBar = {
-            @OptIn(ExperimentalMaterial3Api::class)
             TopAppBar(
                 title = { Text("Hidden Vault", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
-                },
-                actions = {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.Add, contentDescription = "Add to vault")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A1A2E),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
-                )
-            )
-        },
-        containerColor = Color(0xFF1A1A2E)
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-            contentAlignment = Alignment.Center
-        ) {
-            if (hiddenMediaCount == 0) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Outlined.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = Color.White.copy(alpha = 0.3f)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Your vault is empty",
-                        color = Color.White.copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Long-press any photo/video in Gallery to hide it here",
-                        color = Color.White.copy(alpha = 0.4f),
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
                 }
-            } else {
-                Text("$hiddenMediaCount hidden items", color = Color.White)
+            )
+        }
+    ) { padding ->
+
+        if (hiddenMedia.isEmpty()) {
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Vault is empty")
+            }
+
+        } else {
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.padding(padding)
+            ) {
+
+                items(hiddenMedia) { media ->
+
+                    Card(
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .size(120.dp)
+                            .clickable {
+                                onNavigateToMedia(media.id)
+                            },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+
+                        AsyncImage(
+                            model = File(media.hiddenPath),
+                            contentDescription = media.fileName,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
         }
     }

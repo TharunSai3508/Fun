@@ -1,6 +1,9 @@
 package com.unistream.core.security
 
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -17,24 +20,107 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
+import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private const val MAX_PIN_LENGTH = 6
+private const val MAX_ATTEMPTS = 5
 
 @Composable
 fun AppLockScreen(
-    onBiometricAuth: () -> Unit,
-    onPinAuth: (String) -> Boolean,
-    onAuthSuccess: () -> Unit
+    onAuthSuccess: () -> Unit,
+    viewModel: AppLockViewModel = hiltViewModel()
 ) {
+
+    val context = LocalContext.current
+    val activity = remember { context.findActivity() }
+
+    val isLocked by viewModel.isLocked.collectAsState()
+    val authError by viewModel.authError.collectAsState()
+
     var enteredPin by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
-    val maxPinLength = 6
+    var attemptCount by remember { mutableIntStateOf(0) }
+    var isLockedTemporarily by remember { mutableStateOf(false) }
+    var lockCountdown by remember { mutableIntStateOf(30) }
 
+    val shakeOffset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(isLocked) {
+        if (!isLocked) onAuthSuccess()
+    }
+
+    // auto launch biometric
     LaunchedEffect(Unit) {
-        onBiometricAuth()
+        delay(400)
+        viewModel.authenticate(activity)
+    }
+
+    // PIN submit
+    LaunchedEffect(enteredPin) {
+
+        if (enteredPin.length == MAX_PIN_LENGTH) {
+
+            delay(80)
+
+            val ok = viewModel.authenticateWithPin(enteredPin)
+
+            if (ok) {
+                onAuthSuccess()
+            } else {
+
+                attemptCount++
+                enteredPin = ""
+                showError = true
+
+                val remaining = MAX_ATTEMPTS - attemptCount
+
+                errorMessage =
+                    if (remaining > 0)
+                        "Incorrect PIN — $remaining attempt${if (remaining == 1) "" else "s"} left"
+                    else
+                        "Too many attempts. Locked for 30s"
+
+                if (attemptCount >= MAX_ATTEMPTS) {
+                    isLockedTemporarily = true
+                    lockCountdown = 30
+                }
+
+                scope.launch {
+                    repeat(4) {
+                        shakeOffset.animateTo(12f, tween(50))
+                        shakeOffset.animateTo(-12f, tween(50))
+                    }
+                    shakeOffset.animateTo(0f)
+                }
+            }
+        }
+    }
+
+    // countdown lock
+    LaunchedEffect(isLockedTemporarily) {
+
+        if (isLockedTemporarily) {
+
+            while (lockCountdown > 0) {
+                delay(1000)
+                lockCountdown--
+            }
+
+            isLockedTemporarily = false
+            attemptCount = 0
+            showError = false
+        }
     }
 
     Box(
@@ -42,7 +128,7 @@ fun AppLockScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
+                    listOf(
                         Color(0xFF0D0D0D),
                         Color(0xFF1A0A2E),
                         Color(0xFF0D0D0D)
@@ -51,23 +137,39 @@ fun AppLockScreen(
             ),
         contentAlignment = Alignment.Center
     ) {
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // App Logo / Lock Icon
-            Icon(
-                imageVector = Icons.Default.LockOpen,
-                contentDescription = "Lock",
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFF7C4DFF)
-            )
+
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xFF7C4DFF),
+                                Color(0xFFE91E8C)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.LockOpen,
+                    null,
+                    modifier = Modifier.size(38.dp),
+                    tint = Color.White
+                )
+            }
 
             Text(
-                text = "UNISTREAM",
+                "UNISTREAM",
                 style = MaterialTheme.typography.headlineMedium.copy(
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
@@ -76,94 +178,122 @@ fun AppLockScreen(
             )
 
             Text(
-                text = "Enter PIN to unlock",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.6f)
+                text =
+                    if (isLockedTemporarily)
+                        "Try again in ${lockCountdown}s"
+                    else
+                        "Unlock with PIN or Fingerprint",
+                color =
+                    if (isLockedTemporarily)
+                        Color.Red
+                    else
+                        Color.White.copy(.7f),
+                textAlign = TextAlign.Center
             )
 
-            // PIN dots display
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier.graphicsLayer { translationX = shakeOffset.value },
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                repeat(maxPinLength) { index ->
+
+                repeat(MAX_PIN_LENGTH) { index ->
+
+                    val filled = index < enteredPin.length
+
                     Box(
                         modifier = Modifier
-                            .size(16.dp)
+                            .size(if (filled) 16.dp else 13.dp)
                             .clip(CircleShape)
                             .background(
-                                if (index < enteredPin.length) Color(0xFF7C4DFF)
-                                else Color.White.copy(alpha = 0.2f)
+                                when {
+                                    filled && showError -> Color.Red
+                                    filled -> Color(0xFF7C4DFF)
+                                    else -> Color.White.copy(.25f)
+                                }
                             )
                     )
                 }
             }
 
-            // Error message
-            AnimatedVisibility(visible = showError, enter = fadeIn(), exit = fadeOut()) {
+            AnimatedVisibility(showError) {
+
                 Text(
-                    text = errorMessage,
-                    color = Color(0xFFEF5350),
-                    style = MaterialTheme.typography.bodySmall
+                    errorMessage,
+                    color = Color.Red,
+                    textAlign = TextAlign.Center
                 )
             }
 
-            // Numeric Keypad
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                val rows = listOf(
-                    listOf("1", "2", "3"),
-                    listOf("4", "5", "6"),
-                    listOf("7", "8", "9"),
-                    listOf("", "0", "⌫")
+            authError?.let {
+
+                Text(
+                    it,
+                    color = Color.Red,
+                    textAlign = TextAlign.Center
                 )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                val rows = listOf(
+                    listOf("1","2","3"),
+                    listOf("4","5","6"),
+                    listOf("7","8","9"),
+                    listOf("FP","0","⌫")
+                )
+
                 rows.forEach { row ->
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+
                         row.forEach { key ->
-                            if (key.isEmpty()) {
-                                // Biometric button slot
-                                IconButton(
-                                    onClick = onBiometricAuth,
-                                    modifier = Modifier.size(72.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Fingerprint,
-                                        contentDescription = "Biometric",
-                                        modifier = Modifier.size(32.dp),
-                                        tint = Color(0xFF7C4DFF)
-                                    )
-                                }
-                            } else {
-                                PinKeyButton(
-                                    key = key,
-                                    onClick = {
-                                        when (key) {
-                                            "⌫" -> {
-                                                if (enteredPin.isNotEmpty()) {
-                                                    enteredPin = enteredPin.dropLast(1)
-                                                    showError = false
-                                                }
-                                            }
-                                            else -> {
-                                                if (enteredPin.length < maxPinLength) {
-                                                    enteredPin += key
-                                                    if (enteredPin.length == maxPinLength) {
-                                                        val success = onPinAuth(enteredPin)
-                                                        if (success) {
-                                                            onAuthSuccess()
-                                                        } else {
-                                                            showError = true
-                                                            errorMessage = "Incorrect PIN. Try again."
-                                                            enteredPin = ""
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
+
+                            when (key) {
+
+                                "FP" -> {
+
+                                    IconButton(
+                                        onClick = {
+                                            if (!isLockedTemporarily)
+                                                viewModel.authenticate(activity)
+                                        },
+                                        modifier = Modifier.size(72.dp)
+                                    ) {
+
+                                        Icon(
+                                            Icons.Default.Fingerprint,
+                                            null,
+                                            modifier = Modifier.size(32.dp),
+                                            tint = Color(0xFF7C4DFF)
+                                        )
                                     }
-                                )
+                                }
+
+                                "⌫" -> {
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (enteredPin.isNotEmpty())
+                                                enteredPin = enteredPin.dropLast(1)
+                                        },
+                                        modifier = Modifier.size(72.dp),
+                                        shape = CircleShape
+                                    ) {
+                                        Text("⌫")
+                                    }
+                                }
+
+                                else -> {
+
+                                    PinKeyButton(
+                                        key,
+                                        enabled = enteredPin.length < MAX_PIN_LENGTH
+                                    ) {
+
+                                        enteredPin += key
+                                        showError = false
+                                    }
+                                }
                             }
                         }
                     }
@@ -176,24 +306,37 @@ fun AppLockScreen(
 @Composable
 private fun PinKeyButton(
     key: String,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
+
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.size(72.dp),
         shape = CircleShape,
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = Color.White
-        ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        enabled = enabled
     ) {
+
         Text(
-            text = key,
+            key,
             style = MaterialTheme.typography.titleLarge.copy(
-                color = Color.White,
                 fontWeight = FontWeight.Medium
-            ),
-            textAlign = TextAlign.Center
+            )
         )
     }
+}
+
+private fun Context.findActivity(): FragmentActivity {
+
+    var ctx = this
+
+    while (ctx is ContextWrapper) {
+
+        if (ctx is FragmentActivity)
+            return ctx
+
+        ctx = ctx.baseContext
+    }
+
+    throw IllegalStateException("FragmentActivity not found")
 }

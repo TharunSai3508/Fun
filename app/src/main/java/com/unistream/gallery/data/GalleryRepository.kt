@@ -2,9 +2,11 @@ package com.unistream.gallery.data
 
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import com.unistream.core.network.UrlDownloader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -17,25 +19,24 @@ class GalleryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val hiddenMediaDao: HiddenMediaDao
 ) {
+
     private val contentResolver: ContentResolver = context.contentResolver
 
     suspend fun getAllMedia(
         filter: MediaFilter = MediaFilter.ALL,
         sortOrder: SortOrder = SortOrder.DATE_DESC
     ): List<MediaItem> = withContext(Dispatchers.IO) {
+
         val mediaItems = mutableListOf<MediaItem>()
 
-        // Images
         if (filter == MediaFilter.ALL || filter == MediaFilter.IMAGES || filter == MediaFilter.GIFS) {
-            mediaItems.addAll(queryImages(filter, sortOrder))
+            mediaItems.addAll(queryImages(filter))
         }
 
-        // Videos
         if (filter == MediaFilter.ALL || filter == MediaFilter.VIDEOS || filter == MediaFilter.SCREEN_RECORDINGS) {
-            mediaItems.addAll(queryVideos(filter, sortOrder))
+            mediaItems.addAll(queryVideos(filter))
         }
 
-        // Sort combined results
         when (sortOrder) {
             SortOrder.DATE_DESC -> mediaItems.sortByDescending { it.dateAdded }
             SortOrder.DATE_ASC -> mediaItems.sortBy { it.dateAdded }
@@ -46,7 +47,8 @@ class GalleryRepository @Inject constructor(
         mediaItems
     }
 
-    private fun queryImages(filter: MediaFilter, sortOrder: SortOrder): List<MediaItem> {
+    private fun queryImages(filter: MediaFilter): List<MediaItem> {
+
         val items = mutableListOf<MediaItem>()
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 
@@ -63,14 +65,13 @@ class GalleryRepository @Inject constructor(
             MediaStore.Images.Media.BUCKET_ID
         )
 
-        val selection = when (filter) {
-            MediaFilter.GIFS -> "${MediaStore.Images.Media.MIME_TYPE} = ?"
-            else -> null
-        }
-        val selectionArgs = when (filter) {
-            MediaFilter.GIFS -> arrayOf("image/gif")
-            else -> null
-        }
+        val selection = if (filter == MediaFilter.GIFS)
+            "${MediaStore.Images.Media.MIME_TYPE}=?"
+        else null
+
+        val selectionArgs = if (filter == MediaFilter.GIFS)
+            arrayOf("image/gif")
+        else null
 
         contentResolver.query(
             collection,
@@ -79,6 +80,7 @@ class GalleryRepository @Inject constructor(
             selectionArgs,
             MediaStore.Images.Media.DATE_ADDED + " DESC"
         )?.use { cursor ->
+
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
             val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE)
@@ -91,8 +93,10 @@ class GalleryRepository @Inject constructor(
             val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.BUCKET_ID)
 
             while (cursor.moveToNext()) {
+
                 val id = cursor.getLong(idCol)
                 val uri = ContentUris.withAppendedId(collection, id)
+
                 items.add(
                     MediaItem(
                         id = id,
@@ -110,10 +114,12 @@ class GalleryRepository @Inject constructor(
                 )
             }
         }
+
         return items
     }
 
-    private fun queryVideos(filter: MediaFilter, sortOrder: SortOrder): List<MediaItem> {
+    private fun queryVideos(filter: MediaFilter): List<MediaItem> {
+
         val items = mutableListOf<MediaItem>()
         val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
@@ -138,6 +144,7 @@ class GalleryRepository @Inject constructor(
             null,
             MediaStore.Video.Media.DATE_ADDED + " DESC"
         )?.use { cursor ->
+
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
             val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
@@ -151,11 +158,15 @@ class GalleryRepository @Inject constructor(
             val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_ID)
 
             while (cursor.moveToNext()) {
+
                 val id = cursor.getLong(idCol)
                 val uri = ContentUris.withAppendedId(collection, id)
+
                 val name = cursor.getString(nameCol) ?: ""
-                val isScreenRecording = filter == MediaFilter.SCREEN_RECORDINGS &&
-                    (name.contains("screen", ignoreCase = true) || name.contains("record", ignoreCase = true))
+
+                val isScreenRecording =
+                    filter == MediaFilter.SCREEN_RECORDINGS &&
+                            (name.contains("screen", true) || name.contains("record", true))
 
                 if (filter == MediaFilter.SCREEN_RECORDINGS && !isScreenRecording) continue
 
@@ -177,15 +188,20 @@ class GalleryRepository @Inject constructor(
                 )
             }
         }
+
         return items
     }
 
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
+
         val albumMap = mutableMapOf<Long, Album>()
+
         val allMedia = getAllMedia()
 
         allMedia.forEach { media ->
+
             val existing = albumMap[media.bucketId]
+
             if (existing == null) {
                 albumMap[media.bucketId] = Album(
                     id = media.bucketId,
@@ -195,13 +211,16 @@ class GalleryRepository @Inject constructor(
                     bucketId = media.bucketId
                 )
             } else {
-                albumMap[media.bucketId] = existing.copy(mediaCount = existing.mediaCount + 1)
+                albumMap[media.bucketId] =
+                    existing.copy(mediaCount = existing.mediaCount + 1)
             }
         }
+
         albumMap.values.sortedByDescending { it.mediaCount }
     }
 
-    fun getHiddenMedia(): Flow<List<HiddenMediaEntity>> = hiddenMediaDao.getAllHiddenMedia()
+    fun getHiddenMedia(): Flow<List<HiddenMediaEntity>> =
+        hiddenMediaDao.getAllHiddenMedia()
 
     suspend fun hideMedia(media: MediaItem, hiddenPath: String): Long {
         return hiddenMediaDao.insertHiddenMedia(
@@ -218,6 +237,62 @@ class GalleryRepository @Inject constructor(
 
     suspend fun unhideMedia(entity: HiddenMediaEntity) {
         hiddenMediaDao.deleteHiddenMedia(entity)
+    }
+
+    /**
+     * Import image or GIF from URL into MediaStore
+     */
+    suspend fun importImageFromUrl(url: String): Uri = withContext(Dispatchers.IO) {
+
+        val request = okhttp3.Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0")
+            .header("Referer", url)
+            .build()
+
+        val client = okhttp3.OkHttpClient()
+
+        val response = client.newCall(request).execute()
+
+        if (!response.isSuccessful) {
+            throw Exception("Failed to download image")
+        }
+
+        val body = response.body ?: throw Exception("Empty response")
+
+        val mime = body.contentType()?.toString() ?: "image/jpeg"
+
+        val extension = when {
+            mime.contains("gif") -> "gif"
+            mime.contains("png") -> "png"
+            mime.contains("webp") -> "webp"
+            else -> "jpg"
+        }
+
+        val fileName = "IMG_${System.currentTimeMillis()}.$extension"
+
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, mime)
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Unistream")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+
+        val uri = contentResolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            values
+        ) ?: throw Exception("MediaStore insert failed")
+
+        contentResolver.openOutputStream(uri)?.use { output ->
+            body.byteStream().copyTo(output)
+        }
+
+        values.clear()
+        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+
+        contentResolver.update(uri, values, null, null)
+
+        uri
     }
 }
 
