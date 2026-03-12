@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -50,18 +51,14 @@ class MainActivity : FragmentActivity() {
             RequestMediaPermissionsOnFirstLaunch()
 
             UniStreamTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding()
+                ) {
 
                     AppNavigation(
-                        isAppLocked = isAppLocked,
-
-                        onBiometricAuth = {
-                            appLockViewModel.authenticate(this)
-                        },
-
-                        onPinAuth = { pin ->
-                            appLockViewModel.authenticateWithPin(pin)
-                        }
+                        isAppLocked = isAppLocked
                     )
                 }
             }

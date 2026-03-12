@@ -110,6 +110,9 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
+    // Network
+    implementation("org.jsoup:jsoup:1.17.2")
+
     // Media3 / ExoPlayer
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)

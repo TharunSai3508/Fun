@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -49,10 +48,19 @@ fun GalleryScreen(
 
     var showFilterSheet by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
 
     GalleryTheme {
 
         Scaffold(
+
+            floatingActionButton = {
+                FloatingActionButton(
+                    onClick = { showImportDialog = true }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Import URL")
+                }
+            },
 
             topBar = {
                 GalleryTopBar(
@@ -174,6 +182,41 @@ fun GalleryScreen(
                     showFilterSheet = false
                 },
                 onDismiss = { showFilterSheet = false }
+            )
+        }
+
+        if (showImportDialog) {
+
+            var url by remember { mutableStateOf("") }
+
+            AlertDialog(
+                onDismissRequest = { showImportDialog = false },
+                confirmButton = {
+
+                    TextButton(
+                        onClick = {
+                            viewModel.importFromUrl(url)
+                            showImportDialog = false
+                        }
+                    ) {
+                        Text("Download")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showImportDialog = false }) {
+                        Text("Cancel")
+                    }
+                },
+                title = { Text("Import Image from URL") },
+                text = {
+
+                    TextField(
+                        value = url,
+                        onValueChange = { url = it },
+                        placeholder = { Text("https://example.com/image.jpg") },
+                        singleLine = true
+                    )
+                }
             )
         }
     }

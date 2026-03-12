@@ -138,6 +138,11 @@ class GalleryViewModel @Inject constructor(
         }
     }
 
+    fun importFromUrl(url: String) = viewModelScope.launch {
+        repository.importImageFromUrl(url)
+        loadMedia()
+    }
+
     fun selectAll() {
 
         _uiState.update { state ->

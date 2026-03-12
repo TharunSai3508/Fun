@@ -5,7 +5,11 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -67,249 +71,257 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun AppNavigation(
-    isAppLocked: Boolean,
-    onBiometricAuth: () -> Unit,
-    onPinAuth: (String) -> Boolean
+    isAppLocked: Boolean
 ) {
 
     val navController = rememberNavController()
 
-    NavHost(
-        navController = navController,
-        startDestination = Screen.Intro.route,
-
-        enterTransition = {
-            fadeIn(animationSpec = tween(300)) +
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Start,
-                        animationSpec = tween(300)
-                    )
-        },
-
-        exitTransition = {
-            fadeOut(animationSpec = tween(300)) +
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.Start,
-                        animationSpec = tween(300)
-                    )
-        },
-
-        popEnterTransition = {
-            fadeIn(animationSpec = tween(300)) +
-                    slideIntoContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.End,
-                        animationSpec = tween(300)
-                    )
-        },
-
-        popExitTransition = {
-            fadeOut(animationSpec = tween(300)) +
-                    slideOutOfContainer(
-                        towards = AnimatedContentTransitionScope.SlideDirection.End,
-                        animationSpec = tween(300)
-                    )
-        }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding()
     ) {
 
-        composable(Screen.Intro.route) {
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Intro.route,
 
-            LaunchIntroScreen(
-                onAnimationFinished = {
+            enterTransition = {
+                fadeIn(animationSpec = tween(300)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Start,
+                            animationSpec = tween(300)
+                        )
+            },
 
-                    val next =
-                        if (isAppLocked) Screen.AppLock.route
-                        else Screen.Home.route
+            exitTransition = {
+                fadeOut(animationSpec = tween(300)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Start,
+                            animationSpec = tween(300)
+                        )
+            },
 
-                    navController.navigate(next) {
-                        popUpTo(Screen.Intro.route) { inclusive = true }
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(300)) +
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.End,
+                            animationSpec = tween(300)
+                        )
+            },
+
+            popExitTransition = {
+                fadeOut(animationSpec = tween(300)) +
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.End,
+                            animationSpec = tween(300)
+                        )
+            }
+        ) {
+
+            composable(Screen.Intro.route) {
+
+                LaunchIntroScreen(
+                    onAnimationFinished = {
+
+                        val next =
+                            if (isAppLocked) Screen.AppLock.route
+                            else Screen.Home.route
+
+                        navController.navigate(next) {
+                            popUpTo(Screen.Intro.route) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.AppLock.route) {
+            composable(Screen.AppLock.route) {
 
-            AppLockScreen(
-                onBiometricAuth = onBiometricAuth,
-                onPinAuth = onPinAuth,
-                onAuthSuccess = {
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.AppLock.route) { inclusive = true }
+                AppLockScreen(
+
+                    onAuthSuccess = {
+
+                        navController.navigate(Screen.Home.route) {
+
+                            popUpTo(Screen.AppLock.route) {
+                                inclusive = true
+                            }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.Home.route) {
+            composable(Screen.Home.route) {
 
-            HomeScreen(
-                onNavigateToGallery = { navController.navigate(Screen.Gallery.route) },
-                onNavigateToStreaming = { navController.navigate(Screen.StreamingHome.route) },
-                onNavigateToNovel = { navController.navigate(Screen.NovelLibrary.route) },
-                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
-            )
-        }
+                HomeScreen(
+                    onNavigateToGallery = { navController.navigate(Screen.Gallery.route) },
+                    onNavigateToStreaming = { navController.navigate(Screen.StreamingHome.route) },
+                    onNavigateToNovel = { navController.navigate(Screen.NovelLibrary.route) },
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                )
+            }
 
-        composable(Screen.Gallery.route) {
+            composable(Screen.Gallery.route) {
 
-            GalleryScreen(
-                onNavigateToAlbums = { navController.navigate(Screen.Albums.route) },
-                onNavigateToMedia = { mediaId ->
-                    navController.navigate(Screen.MediaDetail.createRoute(mediaId))
-                },
-                onNavigateToHiddenVault = {
-                    navController.navigate(Screen.HiddenVault.route)
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                GalleryScreen(
+                    onNavigateToAlbums = { navController.navigate(Screen.Albums.route) },
+                    onNavigateToMedia = { mediaId ->
+                        navController.navigate(Screen.MediaDetail.createRoute(mediaId))
+                    },
+                    onNavigateToHiddenVault = {
+                        navController.navigate(Screen.HiddenVault.route)
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.Albums.route) {
+            composable(Screen.Albums.route) {
 
-            AlbumsScreen(
-                onNavigateToMedia = { mediaId ->
-                    navController.navigate(Screen.MediaDetail.createRoute(mediaId))
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                AlbumsScreen(
+                    onNavigateToMedia = { mediaId ->
+                        navController.navigate(Screen.MediaDetail.createRoute(mediaId))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.MediaDetail.route) { entry ->
+            composable(Screen.MediaDetail.route) { entry ->
 
-            val mediaId =
-                entry.arguments?.getString("mediaId")?.toLongOrNull() ?: 0L
+                val mediaId =
+                    entry.arguments?.getString("mediaId")?.toLongOrNull() ?: 0L
 
-            MediaDetailScreen(
-                mediaId = mediaId,
-                onNavigateToEditor = {
-                    navController.navigate(Screen.Editor.createRoute(mediaId))
-                },
-                onNavigateToWallpaper = {
-                    navController.navigate(Screen.Wallpaper.createRoute(mediaId))
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                MediaDetailScreen(
+                    mediaId = mediaId,
+                    onNavigateToEditor = {
+                        navController.navigate(Screen.Editor.createRoute(mediaId))
+                    },
+                    onNavigateToWallpaper = {
+                        navController.navigate(Screen.Wallpaper.createRoute(mediaId))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.HiddenVault.route) {
+            composable(Screen.HiddenVault.route) {
 
-            HiddenVaultScreen(
-                onNavigateToMedia = { mediaId ->
-                    navController.navigate(Screen.MediaDetail.createRoute(mediaId))
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                HiddenVaultScreen(
+                    onNavigateToMedia = { mediaId ->
+                        navController.navigate(Screen.MediaDetail.createRoute(mediaId))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.Editor.route) { entry ->
+            composable(Screen.Editor.route) { entry ->
 
-            val mediaId =
-                entry.arguments?.getString("mediaId")?.toLongOrNull() ?: 0L
+                val mediaId =
+                    entry.arguments?.getString("mediaId")?.toLongOrNull() ?: 0L
 
-            EditorScreen(
-                mediaId = mediaId,
-                onBack = { navController.popBackStack() }
-            )
-        }
+                EditorScreen(
+                    mediaId = mediaId,
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.Wallpaper.route) { entry ->
+            composable(Screen.Wallpaper.route) { entry ->
 
-            val mediaId =
-                entry.arguments?.getString("mediaId")?.toLongOrNull() ?: 0L
+                val mediaId =
+                    entry.arguments?.getString("mediaId")?.toLongOrNull() ?: 0L
 
-            WallpaperScreen(
-                mediaId = mediaId,
-                onBack = { navController.popBackStack() }
-            )
-        }
+                WallpaperScreen(
+                    mediaId = mediaId,
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.StreamingHome.route) {
+            composable(Screen.StreamingHome.route) {
 
-            StreamingHomeScreen(
-                onNavigateToPlayer = { type, id ->
-                    navController.navigate(Screen.Player.createRoute(type, id))
-                },
-                onNavigateToPlaylist = { id ->
-                    navController.navigate(Screen.Playlist.createRoute(id))
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                StreamingHomeScreen(
+                    onNavigateToPlayer = { type, id ->
+                        navController.navigate(Screen.Player.createRoute(type, id))
+                    },
+                    onNavigateToPlaylist = { id ->
+                        navController.navigate(Screen.Playlist.createRoute(id))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.Player.route) { entry ->
+            composable(Screen.Player.route) { entry ->
 
-            val type = entry.arguments?.getString("sourceType") ?: "local"
-            val id = Uri.decode(entry.arguments?.getString("sourceId") ?: "")
+                val type = entry.arguments?.getString("sourceType") ?: "local"
+                val id = Uri.decode(entry.arguments?.getString("sourceId") ?: "")
 
-            PlayerScreen(
-                sourceType = type,
-                sourceId = id,
-                onBack = { navController.popBackStack() }
-            )
-        }
+                PlayerScreen(
+                    sourceType = type,
+                    sourceId = id,
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.Playlist.route) { entry ->
+            composable(Screen.Playlist.route) { entry ->
 
-            val playlistId =
-                entry.arguments?.getString("playlistId")?.toLongOrNull() ?: 0L
+                val playlistId =
+                    entry.arguments?.getString("playlistId")?.toLongOrNull() ?: 0L
 
-            PlaylistScreen(
-                playlistId = playlistId,
-                onNavigateToPlayer = { type, id ->
-                    navController.navigate(Screen.Player.createRoute(type, id))
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                PlaylistScreen(
+                    playlistId = playlistId,
+                    onNavigateToPlayer = { type, id ->
+                        navController.navigate(Screen.Player.createRoute(type, id))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.NovelLibrary.route) {
+            composable(Screen.NovelLibrary.route) {
 
-            NovelLibraryScreen(
-                onNavigateToReader = { novelId ->
-                    navController.navigate(Screen.NovelReader.createRoute(novelId))
-                },
-                onNavigateToImport = {
-                    navController.navigate(Screen.NovelImport.route)
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
+                NovelLibraryScreen(
+                    onNavigateToReader = { novelId ->
+                        navController.navigate(Screen.NovelReader.createRoute(novelId))
+                    },
+                    onNavigateToImport = {
+                        navController.navigate(Screen.NovelImport.route)
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.NovelReader.route) { entry ->
+            composable(Screen.NovelReader.route) { entry ->
 
-            val novelId =
-                entry.arguments?.getString("novelId")?.toLongOrNull() ?: 0L
+                val novelId =
+                    entry.arguments?.getString("novelId")?.toLongOrNull() ?: 0L
 
-            val chapterId =
-                entry.arguments?.getString("chapterId")?.toLongOrNull() ?: 0L
+                val chapterId =
+                    entry.arguments?.getString("chapterId")?.toLongOrNull() ?: 0L
 
-            NovelReaderScreen(
-                novelId = novelId,
-                chapterId = chapterId,
-                onBack = { navController.popBackStack() }
-            )
-        }
+                NovelReaderScreen(
+                    novelId = novelId,
+                    chapterId = chapterId,
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
-        composable(Screen.NovelImport.route) {
+            composable(Screen.NovelImport.route) {
 
-            NovelImportScreen(
-                onBack = { navController.popBackStack() },
-                onImportSuccess = { novelId ->
+                NovelImportScreen(
+                    onBack = { navController.popBackStack() },
+                    onImportSuccess = { novelId ->
 
-                    navController.navigate(
-                        Screen.NovelReader.createRoute(novelId)
-                    ) {
-                        popUpTo(Screen.NovelImport.route) { inclusive = true }
+                        navController.navigate(
+                            Screen.NovelReader.createRoute(novelId)
+                        ) {
+                            popUpTo(Screen.NovelImport.route) { inclusive = true }
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Screen.Settings.route) {
+            composable(Screen.Settings.route) {
 
-            SettingsScreen(
-                onBack = { navController.popBackStack() }
-            )
+                SettingsScreen(
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
