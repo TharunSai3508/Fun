@@ -30,7 +30,7 @@ class NovelParser @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
 
-    // Full browser headers to avoid bot-detection and fetch accurate HTML
+    // Full browser headers to bypass bot-detection on Webnovel / WuxiaWorld
     private fun buildRequest(url: String): Request = Request.Builder()
         .url(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -45,16 +45,13 @@ class NovelParser @Inject constructor(
         .header("Cache-Control", "max-age=0")
         .build()
 
-    private fun fetchHtml(url: String): String? {
-        return runCatching {
-            okHttpClient.newCall(buildRequest(url)).execute().use { response ->
-                if (!response.isSuccessful) null else response.body?.string()
-            }
-        }.getOrNull()
-    }
+    private fun fetchHtml(url: String): String? = runCatching {
+        okHttpClient.newCall(buildRequest(url)).execute().use { response ->
+            if (!response.isSuccessful) null else response.body?.string()
+        }
+    }.getOrNull()
 
-    private fun htmlToDoc(html: String, baseUrl: String): Document =
-        Jsoup.parse(html, baseUrl)
+    private fun htmlToDoc(html: String, baseUrl: String): Document = Jsoup.parse(html, baseUrl)
 
     suspend fun parseNovelPage(url: String): ParsedNovel? = withContext(Dispatchers.IO) {
         try {
@@ -88,28 +85,24 @@ class NovelParser @Inject constructor(
                 else -> extractGenericChapter(doc)
             }
         } catch (e: Exception) {
-            "" // Return empty — caller handles blank content without marking downloaded
+            "" // Return empty — caller will not mark chapter as downloaded if blank
         }
     }
 
     // ── Webnovel.com Parser ──────────────────────────────────────────────
-    // Webnovel is a React/Next.js SPA. The server-rendered HTML is minimal,
-    // but Next.js embeds full page data as JSON in a <script id="__NEXT_DATA__"> tag.
-    // We extract that JSON instead of relying on CSS selectors that find empty DOM.
+    // Webnovel is a React/Next.js SPA. Raw HTML from the server has an empty DOM.
+    // Next.js embeds the full page state as JSON in <script id="__NEXT_DATA__">.
+    // We extract that JSON instead of relying on CSS selectors against an empty DOM.
     private fun parseWebnovel(doc: Document, html: String, url: String): ParsedNovel {
-        // Primary: __NEXT_DATA__ JSON extraction
         val nextData = extractNextData(html)
         if (nextData != null) {
             return parseWebnovelFromNextData(nextData, url)
         }
 
-        // Fallback: try multiple CSS selector sets (site may have updated markup)
+        // CSS fallback (multiple selector candidates for markup changes)
         val title = listOf(
-            ".pt4.pb4.oh.mb4 h1",
-            "h1.novel-title",
-            ".book-name",
-            "h1[class*='title']",
-            "h1"
+            ".pt4.pb4.oh.mb4 h1", "h1.novel-title", ".book-name",
+            "h1[class*='title']", "h1"
         ).firstNotNullOfOrNull { sel -> doc.select(sel).text().ifBlank { null } } ?: "Unknown"
 
         val author = listOf(".author-name", ".author a", "a[href*='/author/']")
@@ -117,64 +110,48 @@ class NovelParser @Inject constructor(
 
         val description = listOf(".j_synopsis p", ".synopsis p", "[class*='synopsis'] p", ".description p")
             .flatMap { sel -> doc.select(sel).map { it.text() } }
-            .filter { it.isNotBlank() }
-            .joinToString("\n")
+            .filter { it.isNotBlank() }.joinToString("\n")
 
         val coverUrl = listOf(".g_thumb img", ".book-img img", "img[class*='cover']", "img[class*='thumb']")
             .firstNotNullOfOrNull { sel -> doc.select(sel).attr("src").ifBlank { null } }
 
         val chapterLinks = doc.select(".chapter-item a, .content-list a[href*='/chapter/'], a[href*='/chapter/']")
         val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), url)
-            )
+            ParsedChapter(number = (i + 1).toFloat(), title = el.text().ifBlank { "Chapter ${i + 1}" }, url = normalizeUrl(el.attr("href"), url))
         }
         return ParsedNovel(title, author, description, coverUrl, chapters)
     }
 
     private fun parseWebnovelFromNextData(json: JSONObject, baseUrl: String): ParsedNovel {
-        // Navigate the Next.js page props structure
-        val props = json.optJSONObject("props")
-            ?.optJSONObject("pageProps")
+        val props = json.optJSONObject("props")?.optJSONObject("pageProps")
             ?: json.optJSONObject("props") ?: json
 
         val bookInfo = props.optJSONObject("bookInfo")
-            ?: props.optJSONObject("novel")
-            ?: props.optJSONObject("book")
+            ?: props.optJSONObject("novel") ?: props.optJSONObject("book")
 
         val title = bookInfo?.optString("bookName")
-            ?: bookInfo?.optString("name")
-            ?: bookInfo?.optString("title")
-            ?: "Unknown"
+            ?: bookInfo?.optString("name") ?: bookInfo?.optString("title") ?: "Unknown"
 
         val author = bookInfo?.optJSONArray("authorItems")?.optJSONObject(0)?.optString("name")
-            ?: bookInfo?.optString("authorName")
-            ?: "Unknown"
+            ?: bookInfo?.optString("authorName") ?: "Unknown"
 
-        val description = bookInfo?.optString("description")
-            ?: bookInfo?.optString("summary")
-            ?: ""
+        val description = bookInfo?.optString("description") ?: bookInfo?.optString("summary") ?: ""
+        val coverUrl = bookInfo?.optString("coverUrl") ?: bookInfo?.optString("cover")
 
-        val coverUrl = bookInfo?.optString("coverUrl")
-            ?: bookInfo?.optString("cover")
-
-        // Chapter list from Next data
-        val chapterList = props.optJSONArray("chapterList")
-            ?: bookInfo?.optJSONArray("chapters")
-
+        val chapterList = props.optJSONArray("chapterList") ?: bookInfo?.optJSONArray("chapters")
         val chapters = mutableListOf<ParsedChapter>()
         if (chapterList != null) {
             for (i in 0 until chapterList.length()) {
                 val ch = chapterList.optJSONObject(i) ?: continue
-                val chNum = ch.optInt("chapterIndex", i + 1).toFloat()
-                val chTitle = ch.optString("chapterName").ifBlank { "Chapter ${i + 1}" }
                 val chUrl = ch.optString("link").let {
                     if (it.isNotBlank()) normalizeUrl(it, baseUrl) else ""
                 }
                 if (chUrl.isNotBlank()) {
-                    chapters.add(ParsedChapter(number = chNum, title = chTitle, url = chUrl))
+                    chapters.add(ParsedChapter(
+                        number = ch.optInt("chapterIndex", i + 1).toFloat(),
+                        title = ch.optString("chapterName").ifBlank { "Chapter ${i + 1}" },
+                        url = chUrl
+                    ))
                 }
             }
         }
@@ -182,35 +159,23 @@ class NovelParser @Inject constructor(
     }
 
     private fun extractWebnovelChapter(doc: Document, html: String): String {
-        // Try __NEXT_DATA__ for chapter content first
         val nextData = extractNextData(html)
         if (nextData != null) {
-            val content = nextData.optJSONObject("props")
-                ?.optJSONObject("pageProps")
-                ?.optJSONObject("chapterInfo")
-                ?.optJSONObject("chapterInfo")
-                ?.optString("content")
-                ?: nextData.optJSONObject("props")
-                    ?.optJSONObject("pageProps")
-                    ?.optString("content")
+            val content = nextData.optJSONObject("props")?.optJSONObject("pageProps")
+                ?.optJSONObject("chapterInfo")?.optJSONObject("chapterInfo")?.optString("content")
+                ?: nextData.optJSONObject("props")?.optJSONObject("pageProps")?.optString("content")
             if (!content.isNullOrBlank()) return content
         }
-
-        // CSS fallback
         return listOf(
-            ".chapter-content p",
-            ".cha-content p",
-            "#chapter-content p",
-            "[class*='chapter-content'] p",
-            ".content-wrap p"
+            ".chapter-content p", ".cha-content p", "#chapter-content p",
+            "[class*='chapter-content'] p", ".content-wrap p"
         ).firstNotNullOfOrNull { sel ->
             doc.select(sel).joinToString("\n\n") { it.text() }.ifBlank { null }
-        } ?: doc.select("p").filter { it.text().length > 80 }
-            .joinToString("\n\n") { it.text() }
+        } ?: doc.select("p").filter { it.text().length > 80 }.joinToString("\n\n") { it.text() }
     }
 
     // ── RoyalRoad.com Parser ─────────────────────────────────────────────
-    // RoyalRoad is server-rendered — CSS selectors work reliably here
+    // RoyalRoad is server-rendered — CSS selectors work reliably
     private fun parseRoyalRoad(doc: Document, url: String): ParsedNovel {
         val title = listOf("h1[property='name']", ".fic-title h1", "h1")
             .firstNotNullOfOrNull { sel -> doc.select(sel).text().ifBlank { null } } ?: "Unknown"
@@ -218,27 +183,17 @@ class NovelParser @Inject constructor(
         val author = listOf("span[property='name']", ".author-name a", "a[href*='/profile/']")
             .firstNotNullOfOrNull { sel -> doc.select(sel).first()?.text()?.ifBlank { null } } ?: "Unknown"
 
-        val description = listOf(
-            ".description .hidden-content p",
-            ".description p",
-            ".fiction-description p"
-        ).flatMap { sel -> doc.select(sel).map { it.text() } }
-            .filter { it.isNotBlank() }
-            .joinToString("\n")
+        val description = listOf(".description .hidden-content p", ".description p", ".fiction-description p")
+            .flatMap { sel -> doc.select(sel).map { it.text() } }
+            .filter { it.isNotBlank() }.joinToString("\n")
 
         val coverUrl = listOf(".thumbnail img", ".cover img", ".book-cover img")
             .firstNotNullOfOrNull { sel -> doc.select(sel).attr("src").ifBlank { null } }
 
-        // RoyalRoad chapters are in a DataTable — try multiple selectors
         val chapterLinks = doc.select("table#chapters tbody tr td a, .chapter-row a, a[href*='/chapter/']")
             .filter { it.attr("href").contains("/chapter/") }
-
         val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), "https://www.royalroad.com")
-            )
+            ParsedChapter(number = (i + 1).toFloat(), title = el.text().ifBlank { "Chapter ${i + 1}" }, url = normalizeUrl(el.attr("href"), "https://www.royalroad.com"))
         }
         return ParsedNovel(title, author, description, coverUrl, chapters)
     }
@@ -251,45 +206,35 @@ class NovelParser @Inject constructor(
     }
 
     // ── WuxiaWorld Parser ────────────────────────────────────────────────
-    // WuxiaWorld also uses Next.js — try __NEXT_DATA__ first
     private fun parseWuxiaWorld(doc: Document, html: String, url: String): ParsedNovel {
         val nextData = extractNextData(html)
         if (nextData != null) {
-            val novel = nextData.optJSONObject("props")
-                ?.optJSONObject("pageProps")
-                ?.optJSONObject("novel")
-
+            val novel = nextData.optJSONObject("props")?.optJSONObject("pageProps")?.optJSONObject("novel")
             if (novel != null) {
                 val title = novel.optString("name").ifBlank { "Unknown" }
                 val author = novel.optJSONArray("translators")?.optJSONObject(0)?.optString("name")
-                    ?: novel.optJSONArray("authors")?.optJSONObject(0)?.optString("name")
-                    ?: "Unknown"
+                    ?: novel.optJSONArray("authors")?.optJSONObject(0)?.optString("name") ?: "Unknown"
                 val description = novel.optString("synopsis")
                 val coverUrl = novel.optString("coverUrl").ifBlank { null }
                 val chaptersJson = novel.optJSONArray("chapters")
                 val chapters = mutableListOf<ParsedChapter>()
                 if (chaptersJson != null) {
+                    val novelSlug = novel.optString("slug")
                     for (i in 0 until chaptersJson.length()) {
                         val ch = chaptersJson.optJSONObject(i) ?: continue
                         val slug = ch.optString("slug")
-                        val novelSlug = novel.optString("slug")
-                        val chUrl = if (slug.isNotBlank() && novelSlug.isNotBlank()) {
-                            "https://www.wuxiaworld.com/novel/$novelSlug/$slug"
-                        } else continue
-                        chapters.add(
-                            ParsedChapter(
-                                number = (i + 1).toFloat(),
-                                title = ch.optString("title").ifBlank { "Chapter ${i + 1}" },
-                                url = chUrl
-                            )
-                        )
+                        if (slug.isBlank() || novelSlug.isBlank()) continue
+                        chapters.add(ParsedChapter(
+                            number = (i + 1).toFloat(),
+                            title = ch.optString("title").ifBlank { "Chapter ${i + 1}" },
+                            url = "https://www.wuxiaworld.com/novel/$novelSlug/$slug"
+                        ))
                     }
                 }
                 return ParsedNovel(title, author, description, coverUrl, chapters)
             }
         }
 
-        // CSS fallback
         val title = listOf("h1.novel-title", "h1[class*='title']", "h1")
             .firstNotNullOfOrNull { sel -> doc.select(sel).text().ifBlank { null } } ?: "Unknown"
         val author = doc.select(".author-name, a[href*='/author/']").text().ifBlank { "Unknown" }
@@ -298,17 +243,12 @@ class NovelParser @Inject constructor(
         val chapterLinks = doc.select(".chapter-list li a, a[href*='/novel/']")
             .filter { it.attr("href").contains(Regex("novel/.+/.+")) }
         val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), url)
-            )
+            ParsedChapter(number = (i + 1).toFloat(), title = el.text().ifBlank { "Chapter ${i + 1}" }, url = normalizeUrl(el.attr("href"), url))
         }
         return ParsedNovel(title, author, description, coverUrl, chapters)
     }
 
     // ── ScribbleHub.com Parser ───────────────────────────────────────────
-    // ScribbleHub is server-rendered WordPress — CSS selectors work well
     private fun parseScribbleHub(doc: Document, url: String): ParsedNovel {
         val title = doc.select("div.fic_title, h1.fic_title, .fiction h1").text()
             .ifBlank { doc.select("h1").first()?.text() ?: "Unknown" }
@@ -316,18 +256,12 @@ class NovelParser @Inject constructor(
         val description = doc.select(".wi_fic_desc p").joinToString("\n") { it.text() }
         val coverUrl = doc.select(".fic_image img, .cover-wrap img").attr("src").ifBlank { null }
 
-        // ScribbleHub uses a Table of Contents page
         val tocUrl = url.trimEnd('/') + "/toc"
         val tocHtml = fetchHtml(tocUrl)
         val tocDoc = if (tocHtml != null) htmlToDoc(tocHtml, tocUrl) else doc
-
         val chapterLinks = tocDoc.select("ol.toc li a, .toc_ol li a, a[href*='/chapter/']")
         val chapters = chapterLinks.mapIndexed { i, el ->
-            ParsedChapter(
-                number = (i + 1).toFloat(),
-                title = el.text().ifBlank { "Chapter ${i + 1}" },
-                url = normalizeUrl(el.attr("href"), url)
-            )
+            ParsedChapter(number = (i + 1).toFloat(), title = el.text().ifBlank { "Chapter ${i + 1}" }, url = normalizeUrl(el.attr("href"), url))
         }
         return ParsedNovel(title, author, description, coverUrl, chapters)
     }
@@ -339,21 +273,17 @@ class NovelParser @Inject constructor(
     }
 
     // ── NovelUpdates Parser ──────────────────────────────────────────────
-    // NovelUpdates is a metadata aggregator — no hosted chapters
     private fun parseNovelUpdates(doc: Document, url: String): ParsedNovel {
         val title = doc.select(".seriestitlenu, h1.entry-title").text()
             .ifBlank { doc.select("h1").first()?.text() ?: "Unknown" }
         val author = doc.select("a[href*='author']").first()?.text() ?: "Unknown"
         val description = doc.select("#editdescription p").joinToString("\n") { it.text() }
         val coverUrl = doc.select(".wpb_wrapper img, .seriesimg img").first()?.attr("src")
-
-        // NovelUpdates has no hosted chapters — return metadata only
         return ParsedNovel(title, author, description, coverUrl, emptyList())
     }
 
     // ── Generic Parser ───────────────────────────────────────────────────
     private fun parseGeneric(doc: Document, url: String): ParsedNovel {
-        // Try JSON-LD structured data first (highest quality signal)
         val jsonLd = doc.select("script[type='application/ld+json']")
             .mapNotNull { runCatching { JSONObject(it.data()) }.getOrNull() }
             .firstOrNull { it.optString("@type").contains("Book", ignoreCase = true) }
@@ -372,7 +302,6 @@ class NovelParser @Inject constructor(
         val coverUrl = jsonLd?.optString("image")?.ifBlank { null }
             ?: doc.select("meta[property='og:image']").attr("content").ifBlank { null }
 
-        // Chapter link heuristics
         val chapterLinks = doc.select("a[href]").filter { el ->
             val text = el.text().lowercase()
             val href = el.attr("href").lowercase()
@@ -398,15 +327,11 @@ class NovelParser @Inject constructor(
             ".text-left", ".entry-content", "article", ".post-content",
             "#content", ".content", "main"
         )
-
         for (selector in selectors) {
             val text = doc.select("$selector p").joinToString("\n\n") { it.text() }
             if (text.length > 200) return text
         }
-
-        // Fallback: all paragraphs with sufficient content
-        return doc.select("p").filter { it.text().length > 50 }
-            .joinToString("\n\n") { it.text() }
+        return doc.select("p").filter { it.text().length > 50 }.joinToString("\n\n") { it.text() }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -437,8 +362,7 @@ class NovelParser @Inject constructor(
     }
 
     private fun extractChapterNumber(text: String, fallbackIndex: Int): Float {
-        val numberRegex = Regex("(?:chapter|ch\\.?)\\s*([\\d.]+)", RegexOption.IGNORE_CASE)
-        val match = numberRegex.find(text)
+        val match = Regex("(?:chapter|ch\\.?)\\s*([\\d.]+)", RegexOption.IGNORE_CASE).find(text)
         return match?.groupValues?.get(1)?.toFloatOrNull() ?: (fallbackIndex + 1).toFloat()
     }
 }

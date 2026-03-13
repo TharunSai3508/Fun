@@ -30,17 +30,14 @@ class GalleryRepository @Inject constructor(
     ): List<MediaItem> = withContext(Dispatchers.IO) {
         val mediaItems = mutableListOf<MediaItem>()
 
-        // Images
         if (filter == MediaFilter.ALL || filter == MediaFilter.IMAGES || filter == MediaFilter.GIFS) {
-            mediaItems.addAll(queryImages(filter, sortOrder))
+            mediaItems.addAll(queryImages(filter))
         }
 
-        // Videos
         if (filter == MediaFilter.ALL || filter == MediaFilter.VIDEOS || filter == MediaFilter.SCREEN_RECORDINGS) {
-            mediaItems.addAll(queryVideos(filter, sortOrder))
+            mediaItems.addAll(queryVideos(filter))
         }
 
-        // Sort combined results
         when (sortOrder) {
             SortOrder.DATE_DESC -> mediaItems.sortByDescending { it.dateAdded }
             SortOrder.DATE_ASC -> mediaItems.sortBy { it.dateAdded }
@@ -51,7 +48,7 @@ class GalleryRepository @Inject constructor(
         mediaItems
     }
 
-    private fun queryImages(filter: MediaFilter, sortOrder: SortOrder): List<MediaItem> {
+    private fun queryImages(filter: MediaFilter): List<MediaItem> {
         val items = mutableListOf<MediaItem>()
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
 
@@ -68,20 +65,11 @@ class GalleryRepository @Inject constructor(
             MediaStore.Images.Media.BUCKET_ID
         )
 
-        val selection = when (filter) {
-            MediaFilter.GIFS -> "${MediaStore.Images.Media.MIME_TYPE} = ?"
-            else -> null
-        }
-        val selectionArgs = when (filter) {
-            MediaFilter.GIFS -> arrayOf("image/gif")
-            else -> null
-        }
+        val selection = if (filter == MediaFilter.GIFS) "${MediaStore.Images.Media.MIME_TYPE} = ?" else null
+        val selectionArgs = if (filter == MediaFilter.GIFS) arrayOf("image/gif") else null
 
         contentResolver.query(
-            collection,
-            projection,
-            selection,
-            selectionArgs,
+            collection, projection, selection, selectionArgs,
             MediaStore.Images.Media.DATE_ADDED + " DESC"
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
@@ -97,11 +85,10 @@ class GalleryRepository @Inject constructor(
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
-                val uri = ContentUris.withAppendedId(collection, id)
                 items.add(
                     MediaItem(
                         id = id,
-                        uri = uri,
+                        uri = ContentUris.withAppendedId(collection, id),
                         displayName = cursor.getString(nameCol) ?: "",
                         mimeType = cursor.getString(mimeCol) ?: "image/jpeg",
                         dateAdded = cursor.getLong(dateAddedCol),
@@ -118,7 +105,7 @@ class GalleryRepository @Inject constructor(
         return items
     }
 
-    private fun queryVideos(filter: MediaFilter, sortOrder: SortOrder): List<MediaItem> {
+    private fun queryVideos(filter: MediaFilter): List<MediaItem> {
         val items = mutableListOf<MediaItem>()
         val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
 
@@ -137,10 +124,7 @@ class GalleryRepository @Inject constructor(
         )
 
         contentResolver.query(
-            collection,
-            projection,
-            null,
-            null,
+            collection, projection, null, null,
             MediaStore.Video.Media.DATE_ADDED + " DESC"
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
@@ -157,17 +141,15 @@ class GalleryRepository @Inject constructor(
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
-                val uri = ContentUris.withAppendedId(collection, id)
                 val name = cursor.getString(nameCol) ?: ""
                 val isScreenRecording = filter == MediaFilter.SCREEN_RECORDINGS &&
                     (name.contains("screen", ignoreCase = true) || name.contains("record", ignoreCase = true))
-
                 if (filter == MediaFilter.SCREEN_RECORDINGS && !isScreenRecording) continue
 
                 items.add(
                     MediaItem(
                         id = id,
-                        uri = uri,
+                        uri = ContentUris.withAppendedId(collection, id),
                         displayName = name,
                         mimeType = cursor.getString(mimeCol) ?: "video/mp4",
                         dateAdded = cursor.getLong(dateAddedCol),
@@ -187,17 +169,12 @@ class GalleryRepository @Inject constructor(
 
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
         val albumMap = mutableMapOf<Long, Album>()
-        val allMedia = getAllMedia()
-
-        allMedia.forEach { media ->
+        getAllMedia().forEach { media ->
             val existing = albumMap[media.bucketId]
             if (existing == null) {
                 albumMap[media.bucketId] = Album(
-                    id = media.bucketId,
-                    name = media.bucketName,
-                    coverUri = media.uri,
-                    mediaCount = 1,
-                    bucketId = media.bucketId
+                    id = media.bucketId, name = media.bucketName,
+                    coverUri = media.uri, mediaCount = 1, bucketId = media.bucketId
                 )
             } else {
                 albumMap[media.bucketId] = existing.copy(mediaCount = existing.mediaCount + 1)
@@ -228,10 +205,12 @@ class GalleryRepository @Inject constructor(
     /**
      * Download media from a URL into the device gallery.
      *
-     * Fix for blank black image bug: the original code (if it existed) would set IS_PENDING=1
-     * but never clear it to 0, leaving MediaStore with a 0-byte placeholder that renders as
-     * a black thumbnail. This implementation clears IS_PENDING after bytes are written,
-     * and deletes the orphaned row on failure.
+     * Root cause of blank black image bug: IS_PENDING=1 was set on MediaStore insert but
+     * never cleared to 0 after bytes were written. MediaStore retained a 0-byte pending
+     * placeholder that the gallery rendered as a solid black thumbnail.
+     *
+     * Fix: write all bytes first, then clear IS_PENDING=0. On any exception, delete the
+     * orphaned pending row so no black placeholder ever appears in the gallery.
      */
     suspend fun downloadMediaFromUrl(url: String): Boolean = withContext(Dispatchers.IO) {
         runCatching {
@@ -246,7 +225,6 @@ class GalleryRepository @Inject constructor(
                 if (!response.isSuccessful) return@use false
                 val body = response.body ?: return@use false
 
-                // Determine MIME type from Content-Type header, fallback to URL extension
                 val contentType = response.header("Content-Type") ?: ""
                 val mimeType = when {
                     contentType.contains("video/") -> contentType.substringBefore(";").trim()
@@ -282,36 +260,19 @@ class GalleryRepository @Inject constructor(
         } else {
             MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         }
-
         val cv = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(
-                MediaStore.MediaColumns.RELATIVE_PATH,
-                if (isVideo) "Movies/UniStream" else "Pictures/UniStream"
-            )
-            // Reserve the row — file is incomplete until IS_PENDING is cleared
+            put(MediaStore.MediaColumns.RELATIVE_PATH, if (isVideo) "Movies/UniStream" else "Pictures/UniStream")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-
         val uri: Uri = contentResolver.insert(collection, cv) ?: return false
-
         return try {
-            contentResolver.openOutputStream(uri)?.use { outputStream ->
-                body.byteStream().copyTo(outputStream)
-            }
-            // CRITICAL: clear IS_PENDING so MediaStore publishes the file.
-            // Without this step the row stays as a 0-byte pending placeholder,
-            // which the gallery renders as a blank black thumbnail.
-            contentResolver.update(
-                uri,
-                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                null,
-                null
-            )
+            contentResolver.openOutputStream(uri)?.use { body.byteStream().copyTo(it) }
+            // CRITICAL: clear IS_PENDING — without this the file stays as an invisible 0-byte placeholder
+            contentResolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
             true
         } catch (e: Exception) {
-            // Delete the orphaned pending placeholder so it doesn't pollute the gallery
             runCatching { contentResolver.delete(uri, null, null) }
             false
         }
@@ -325,23 +286,15 @@ class GalleryRepository @Inject constructor(
         isVideo: Boolean
     ): Boolean {
         val dir = if (isVideo) {
-            android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_MOVIES
-            ).resolve("UniStream")
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES)
         } else {
-            android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_PICTURES
-            ).resolve("UniStream")
-        }
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES)
+        }.resolve("UniStream")
         dir.mkdirs()
         val file = java.io.File(dir, fileName)
-
         return try {
-            file.outputStream().use { out -> body.byteStream().copyTo(out) }
-            // Notify MediaScanner so the file appears in the gallery immediately
-            android.media.MediaScannerConnection.scanFile(
-                context, arrayOf(file.absolutePath), arrayOf(mimeType), null
-            )
+            file.outputStream().use { body.byteStream().copyTo(it) }
+            android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mimeType), null)
             true
         } catch (e: Exception) {
             file.delete()

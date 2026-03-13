@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,7 +35,6 @@ private val StreamBg = Color(0xFF0D0D0D)
 private val StreamSurface = Color(0xFF1A1A1A)
 private val StreamRed = Color(0xFFE50914)
 
-// ─── Category definition ──────────────────────────────────────────────────────
 private val CATEGORIES = listOf("All", "Movies", "Series", "Sports", "Music", "Kids")
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -45,17 +45,55 @@ fun StreamingHomeScreen(
     onBack: () -> Unit,
     viewModel: StreamingViewModel = hiltViewModel()
 ) {
+
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
+
     var selectedCategory by remember { mutableIntStateOf(0) }
     var searchExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    val filteredVideos = remember(uiState.localVideos, selectedCategory) {
+
+        when (CATEGORIES[selectedCategory]) {
+
+            "Movies" ->
+                uiState.localVideos.filter { it.title.contains("movie", true) }
+
+            "Series" ->
+                uiState.localVideos.filter {
+                    it.title.contains("episode", true) ||
+                            it.title.contains("series", true)
+                }
+
+            "Sports" ->
+                uiState.localVideos.filter { it.title.contains("sport", true) }
+
+            "Music" ->
+                uiState.localVideos.filter {
+                    it.title.contains("music", true) ||
+                            it.title.contains("song", true)
+                }
+
+            "Kids" ->
+                uiState.localVideos.filter {
+                    it.title.contains("kids", true) ||
+                            it.title.contains("cartoon", true)
+                }
+
+            else -> uiState.localVideos
+        }
+    }
+
     StreamingTheme {
+
         Scaffold(
             containerColor = StreamBg,
+
             topBar = {
+
                 Column {
+
                     StreamingTopBar(
                         searchExpanded = searchExpanded,
                         searchQuery = searchQuery,
@@ -65,10 +103,12 @@ fun StreamingHomeScreen(
                         },
                         onSearchChange = { searchQuery = it },
                         onBack = onBack,
-                        onAddUrl = { viewModel.showUrlDialog(true) }
+                        onAddUrl = { viewModel.showUrlDialog(true) },
+                        onCreatePlaylist = { viewModel.createPlaylist("New Playlist") }
                     )
-                    // Category tabs
+
                     AnimatedVisibility(visible = !searchExpanded) {
+
                         StreamingCategoryTabs(
                             categories = CATEGORIES,
                             selectedIndex = selectedCategory,
@@ -78,76 +118,53 @@ fun StreamingHomeScreen(
                 }
             }
         ) { paddingValues ->
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
+                    .padding(paddingValues)
             ) {
-                // Hero Banner
+
                 item {
+
                     StreamingHeroBanner(
-                        videos = uiState.localVideos.take(5),
+                        videos = filteredVideos.take(5),
                         onPlayClick = { source ->
+
                             viewModel.recordWatch(source)
-                            onNavigateToPlayer("local", source.uri)
+
+                            onNavigateToPlayer(
+                                "local",
+                                source.uri
+                            )
                         }
                     )
                 }
 
-                // Continue Watching
                 if (uiState.continueWatching.isNotEmpty()) {
+
                     item {
-                        ContentSection(title = "Continue Watching", icon = Icons.Default.PlayCircle) {
+
+                        ContentSection(
+                            title = "Continue Watching",
+                            icon = Icons.Default.PlayCircle
+                        ) {
+
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+
                                 items(uiState.continueWatching) { history ->
+
                                     ContinueWatchingCard(
                                         history = history,
-                                        onClick = { onNavigateToPlayer(history.sourceType, history.sourceUri) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // My Playlists
-                if (uiState.playlists.isNotEmpty()) {
-                    item {
-                        ContentSection(title = "My Playlists", icon = Icons.Default.VideoLibrary) {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.playlists) { playlist ->
-                                    PlaylistCard(
-                                        name = playlist.name,
-                                        thumbnailUri = playlist.thumbnailUri,
-                                        onClick = { onNavigateToPlaylist(playlist.id) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // From Device
-                if (uiState.localVideos.isNotEmpty()) {
-                    item {
-                        ContentSection(title = "From Device", icon = Icons.Default.Smartphone) {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.localVideos.take(20)) { source ->
-                                    VideoCard(
-                                        source = source,
                                         onClick = {
-                                            viewModel.recordWatch(source)
-                                            onNavigateToPlayer("local", source.uri)
+
+                                            onNavigateToPlayer(
+                                                history.sourceType,
+                                                history.sourceUri
+                                            )
                                         }
                                     )
                                 }
@@ -156,35 +173,106 @@ fun StreamingHomeScreen(
                     }
                 }
 
-                // Empty state
-                if (!uiState.isLoading && uiState.localVideos.isEmpty()) {
-                    item { StreamingEmptyState(onAddUrl = { viewModel.showUrlDialog(true) }) }
+                if (filteredVideos.isNotEmpty()) {
+
+                    item {
+
+                        ContentSection(
+                            title = "From Device",
+                            icon = Icons.Default.Smartphone
+                        ) {
+
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+
+                                items(filteredVideos.take(20)) { source ->
+
+                                    VideoCard(
+                                        source = source,
+                                        onClick = {
+
+                                            viewModel.recordWatch(source)
+
+                                            onNavigateToPlayer(
+                                                "local",
+                                                source.uri
+                                            )
+                                        },
+                                        onAddToPlaylist = {
+
+                                            viewModel.addToPlaylist(
+                                                playlistId = uiState.playlists.firstOrNull()?.id
+                                                    ?: return@VideoCard,
+                                                source = source
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
-                item { Spacer(modifier = Modifier.height(32.dp)) }
+                item { Spacer(Modifier.height(32.dp)) }
             }
         }
 
-        // URL Input Dialog
         if (uiState.showUrlDialog) {
+
             StreamUrlDialog(
                 urlInput = uiState.urlInput,
                 onUrlChange = viewModel::setUrlInput,
+
                 onPlay = { url ->
+
                     scope.launch {
+
                         val source = viewModel.prepareUrlSource(url)
+
                         if (source != null) {
+
                             viewModel.showUrlDialog(false)
+
                             viewModel.recordWatch(source)
-                            onNavigateToPlayer(source.type.name, source.uri)
+
+                            onNavigateToPlayer(
+                                source.type.name,
+                                source.uri
+                            )
                         }
                     }
                 },
+
+                onDownload = { url ->
+
+                    scope.launch {
+                        viewModel.downloadVideo(url)
+                        viewModel.showUrlDialog(false)
+                    }
+                },
+
                 onDismiss = { viewModel.showUrlDialog(false) }
             )
         }
+
+        uiState.errorMessage?.let { error ->
+
+            Snackbar(
+                modifier = Modifier.padding(16.dp),
+                action = {
+                    TextButton(onClick = { viewModel.clearError() }) {
+                        Text("Dismiss")
+                    }
+                }
+            ) {
+                Text(error)
+            }
+        }
     }
 }
+
 
 // ─── Top Bar ─────────────────────────────────────────────────────────────────
 
@@ -196,7 +284,8 @@ private fun StreamingTopBar(
     onSearchToggle: () -> Unit,
     onSearchChange: (String) -> Unit,
     onBack: () -> Unit,
-    onAddUrl: () -> Unit
+    onAddUrl: () -> Unit,
+    onCreatePlaylist: () -> Unit
 ) {
     TopAppBar(
         title = {
@@ -421,7 +510,12 @@ private fun ContentSection(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun VideoCard(source: VideoSource, onClick: () -> Unit) {
+private fun VideoCard(
+    source: VideoSource,
+    onClick: () -> Unit,
+    onAddToPlaylist: () -> Unit
+) {
+
     var showMenu by remember { mutableStateOf(false) }
 
     Column(
@@ -432,6 +526,7 @@ private fun VideoCard(source: VideoSource, onClick: () -> Unit) {
                 onLongClick = { showMenu = true }
             )
     ) {
+
         Box(
             modifier = Modifier
                 .width(160.dp)
@@ -440,52 +535,44 @@ private fun VideoCard(source: VideoSource, onClick: () -> Unit) {
                 .background(StreamSurface),
             contentAlignment = Alignment.Center
         ) {
+
             AsyncImage(
                 model = source.thumbnailUri ?: source.uri,
                 contentDescription = source.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+
             Icon(
                 Icons.Default.PlayCircleOutline,
-                contentDescription = "Play",
-                tint = Color.White.copy(alpha = 0.8f),
+                null,
+                tint = Color.White,
                 modifier = Modifier.size(36.dp)
             )
         }
+
         Spacer(modifier = Modifier.height(4.dp))
+
         Text(
             text = source.title,
-            style = MaterialTheme.typography.labelMedium.copy(color = Color.White),
+            color = Color.White,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
 
-        // Long-press context menu
         DropdownMenu(
             expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-            modifier = Modifier.background(Color(0xFF1E1E1E))
+            onDismissRequest = { showMenu = false }
         ) {
+
             DropdownMenuItem(
-                text = { Text("Play", color = Color.White) },
-                leadingIcon = { Icon(Icons.Default.PlayArrow, null, tint = Color.White) },
+                text = { Text("Play") },
                 onClick = { showMenu = false; onClick() }
             )
+
             DropdownMenuItem(
-                text = { Text("Add to Playlist", color = Color.White) },
-                leadingIcon = { Icon(Icons.Default.PlaylistAdd, null, tint = Color.White) },
-                onClick = { showMenu = false }
-            )
-            DropdownMenuItem(
-                text = { Text("Add to My List", color = Color.White) },
-                leadingIcon = { Icon(Icons.Default.Bookmark, null, tint = Color.White) },
-                onClick = { showMenu = false }
-            )
-            DropdownMenuItem(
-                text = { Text("Share", color = Color.White) },
-                leadingIcon = { Icon(Icons.Default.Share, null, tint = Color.White) },
-                onClick = { showMenu = false }
+                text = { Text("Add to Playlist") },
+                onClick = { showMenu = false; onAddToPlaylist() }
             )
         }
     }
@@ -605,48 +692,59 @@ private fun StreamUrlDialog(
     urlInput: String,
     onUrlChange: (String) -> Unit,
     onPlay: (String) -> Unit,
+    onDownload: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+
     AlertDialog(
+
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E1E1E),
-        icon = { Icon(Icons.Default.Link, null, tint = StreamRed) },
-        title = { Text("Stream from URL", color = Color.White, fontWeight = FontWeight.Bold) },
+
+        title = {
+            Text("Stream from URL")
+        },
+
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "Paste a video URL, Google Drive link, HLS (.m3u8), or DASH stream",
-                    color = Color.White.copy(0.7f),
-                    style = MaterialTheme.typography.bodySmall
-                )
+
+            Column {
+
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = onUrlChange,
-                    placeholder = { Text("https://…", color = Color.White.copy(0.4f)) },
-                    singleLine = false,
-                    maxLines = 3,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = StreamRed,
-                        unfocusedBorderColor = Color.White.copy(0.3f)
-                    ),
+                    placeholder = { Text("https://...") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
+
         confirmButton = {
-            Button(
-                onClick = { onPlay(urlInput) },
-                enabled = urlInput.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = StreamRed)
-            ) {
-                Text("Play")
+
+            Row {
+
+                Button(
+                    onClick = { onPlay(urlInput) },
+                    enabled = urlInput.isNotBlank()
+                ) {
+                    Text("Play")
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                OutlinedButton(
+                    onClick = { onDownload(urlInput) },
+                    enabled = urlInput.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Download, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Download")
+                }
             }
         },
+
         dismissButton = {
+
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.White.copy(0.7f))
+                Text("Cancel")
             }
         }
     )

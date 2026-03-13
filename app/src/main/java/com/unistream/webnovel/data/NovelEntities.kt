@@ -120,6 +120,9 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE id = :id")
     suspend fun getNovelById(id: Long): NovelEntity?
 
+    @Query("SELECT * FROM novels WHERE sourceUrl = :url LIMIT 1")
+    suspend fun getNovelBySource(url: String): NovelEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNovel(novel: NovelEntity): Long
 

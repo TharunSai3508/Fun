@@ -160,10 +160,7 @@ class GalleryViewModel @Inject constructor(
 
     fun dismissUrlDownloadDialog() {
         _uiState.update {
-            it.copy(
-                showUrlDownloadDialog = false,
-                urlDownloadState = UrlDownloadState.Idle
-            )
+            it.copy(showUrlDownloadDialog = false, urlDownloadState = UrlDownloadState.Idle)
         }
     }
 
@@ -174,16 +171,11 @@ class GalleryViewModel @Inject constructor(
             val success = repository.downloadMediaFromUrl(url)
             _uiState.update {
                 it.copy(
-                    urlDownloadState = if (success) {
-                        UrlDownloadState.Success
-                    } else {
-                        UrlDownloadState.Error("Download failed. Check the URL and try again.")
-                    }
+                    urlDownloadState = if (success) UrlDownloadState.Success
+                    else UrlDownloadState.Error("Download failed. Check the URL and try again.")
                 )
             }
-            if (success) {
-                loadMedia() // Refresh gallery to show new file
-            }
+            if (success) loadMedia()
         }
     }
 

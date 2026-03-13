@@ -26,24 +26,41 @@ class StreamingRepository @Inject constructor(
     private val watchHistoryDao: WatchHistoryDao,
     private val okHttpClient: OkHttpClient
 ) {
-    // Local video browsing
+
+    // ---------------------------------------------------------
+    // LOCAL VIDEO BROWSING
+    // ---------------------------------------------------------
+
     suspend fun getLocalVideos(): List<VideoSource> = withContext(Dispatchers.IO) {
+
         val videos = mutableListOf<VideoSource>()
+
         val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+
         val projection = arrayOf(
             MediaStore.Video.Media._ID,
             MediaStore.Video.Media.DISPLAY_NAME,
-            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.DURATION
         )
-        context.contentResolver.query(collection, projection, null, null,
+
+        context.contentResolver.query(
+            collection,
+            projection,
+            null,
+            null,
             MediaStore.Video.Media.DATE_ADDED + " DESC"
         )?.use { cursor ->
+
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
             val durCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+
             while (cursor.moveToNext()) {
+
                 val id = cursor.getLong(idCol)
+
                 val uri = ContentUris.withAppendedId(collection, id)
+
                 videos.add(
                     VideoSource(
                         type = VideoSourceType.LOCAL,
@@ -54,17 +71,36 @@ class StreamingRepository @Inject constructor(
                 )
             }
         }
+
         videos
     }
 
-    fun getAllPlaylists(): Flow<List<PlaylistEntity>> = playlistDao.getAllPlaylists()
-    fun getPlaylistItems(playlistId: Long): Flow<List<PlaylistItemEntity>> = playlistDao.getPlaylistItems(playlistId)
+    // ---------------------------------------------------------
+    // PLAYLIST
+    // ---------------------------------------------------------
 
-    suspend fun createPlaylist(name: String, description: String = ""): Long =
-        playlistDao.insertPlaylist(PlaylistEntity(name = name, description = description))
+    fun getAllPlaylists(): Flow<List<PlaylistEntity>> =
+        playlistDao.getAllPlaylists()
 
-    suspend fun addToPlaylist(playlistId: Long, source: VideoSource, order: Int = 0): Long =
-        playlistDao.insertPlaylistItem(
+    fun getPlaylistItems(playlistId: Long): Flow<List<PlaylistItemEntity>> =
+        playlistDao.getPlaylistItems(playlistId)
+
+    suspend fun createPlaylist(
+        name: String,
+        description: String = ""
+    ): Long {
+        return playlistDao.insertPlaylist(
+            PlaylistEntity(name = name, description = description)
+        )
+    }
+
+    suspend fun addToPlaylist(
+        playlistId: Long,
+        source: VideoSource,
+        order: Int = 0
+    ): Long {
+
+        return playlistDao.insertPlaylistItem(
             PlaylistItemEntity(
                 playlistId = playlistId,
                 sourceType = source.type.name,
@@ -74,11 +110,20 @@ class StreamingRepository @Inject constructor(
                 sortOrder = order
             )
         )
+    }
 
-    fun getWatchHistory(): Flow<List<WatchHistoryEntity>> = watchHistoryDao.getWatchHistory()
-    fun getContinueWatching(): Flow<List<WatchHistoryEntity>> = watchHistoryDao.getContinueWatching()
+    // ---------------------------------------------------------
+    // WATCH HISTORY
+    // ---------------------------------------------------------
+
+    fun getWatchHistory(): Flow<List<WatchHistoryEntity>> =
+        watchHistoryDao.getWatchHistory()
+
+    fun getContinueWatching(): Flow<List<WatchHistoryEntity>> =
+        watchHistoryDao.getContinueWatching()
 
     suspend fun recordWatch(source: VideoSource) {
+
         watchHistoryDao.upsertHistory(
             WatchHistoryEntity(
                 sourceType = source.type.name,
@@ -90,66 +135,139 @@ class StreamingRepository @Inject constructor(
         )
     }
 
-    suspend fun updateProgress(uri: String, progressMs: Long) {
-        watchHistoryDao.updateProgress(uri, progressMs, System.currentTimeMillis())
+    suspend fun updateProgress(
+        uri: String,
+        progressMs: Long
+    ) {
+        watchHistoryDao.updateProgress(
+            uri,
+            progressMs,
+            System.currentTimeMillis()
+        )
     }
 
+    // ---------------------------------------------------------
+    // SOURCE TYPE DETECTION
+    // ---------------------------------------------------------
+
     fun detectSourceType(url: String): VideoSourceType {
+
         return when {
-            url.contains("drive.google.com") -> VideoSourceType.DRIVE
-            url.endsWith(".m3u8", ignoreCase = true) -> VideoSourceType.URL_HLS
-            url.endsWith(".mpd", ignoreCase = true) -> VideoSourceType.URL_DASH
-            url.startsWith("content://") -> VideoSourceType.LOCAL
-            else -> VideoSourceType.URL_MP4
+
+            url.startsWith("content://") ->
+                VideoSourceType.LOCAL
+
+            url.contains("drive.google.com") ->
+                VideoSourceType.DRIVE
+
+            url.endsWith(".m3u8", true) ->
+                VideoSourceType.URL_HLS
+
+            url.endsWith(".mpd", true) ->
+                VideoSourceType.URL_DASH
+
+            else ->
+                VideoSourceType.URL_MP4
         }
     }
 
+    // ---------------------------------------------------------
+    // GOOGLE DRIVE LINK CONVERTER
+    // ---------------------------------------------------------
+
     fun convertDriveUrl(shareUrl: String): String {
+
         val fileIdRegex = Regex("/file/d/([a-zA-Z0-9_-]+)")
+
         val match = fileIdRegex.find(shareUrl)
-        val fileId = match?.groupValues?.get(1) ?: return shareUrl
+
+        val fileId = match?.groupValues?.get(1)
+            ?: return shareUrl
+
         return "https://drive.google.com/uc?export=download&id=$fileId"
     }
 
-    suspend fun resolvePlayableUrl(url: String): String? = withContext(Dispatchers.IO) {
-        if (url.startsWith("content://") || url.endsWith(".mp4") || url.endsWith(".m3u8") || url.endsWith(".mpd")) {
-            return@withContext url
+    // ---------------------------------------------------------
+    // RESOLVE PLAYABLE URL
+    // ---------------------------------------------------------
+
+    suspend fun resolvePlayableUrl(url: String): String? =
+        withContext(Dispatchers.IO) {
+
+            if (
+                url.startsWith("content://") ||
+                url.endsWith(".mp4", true) ||
+                url.endsWith(".m3u8", true) ||
+                url.endsWith(".mpd", true)
+            ) {
+                return@withContext url
+            }
+
+            runCatching {
+
+                val doc = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0")
+                    .timeout(15000)
+                    .get()
+
+                val videoSrc =
+                    doc.select("video source[src], meta[property=og:video], meta[property=og:video:url]")
+                        .firstOrNull()
+
+                val raw = when {
+
+                    videoSrc == null -> null
+
+                    videoSrc.hasAttr("src") ->
+                        videoSrc.attr("src")
+
+                    videoSrc.hasAttr("content") ->
+                        videoSrc.attr("content")
+
+                    else -> null
+                }
+
+                val normalized = when {
+
+                    raw.isNullOrBlank() ->
+                        null
+
+                    raw.startsWith("//") ->
+                        "https:$raw"
+
+                    raw.startsWith("http") ->
+                        raw
+
+                    else ->
+                        URL(URL(url), raw).toString()
+                }
+
+                normalized
+
+            }.getOrNull()
         }
 
-        runCatching {
-            val doc = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0")
-                .timeout(12000)
-                .get()
+    // ---------------------------------------------------------
+    // PLAY FROM URL
+    // ---------------------------------------------------------
 
-            val direct = doc.select("meta[property=og:video], meta[property=og:video:url], source[src]")
-                .firstOrNull()
-                ?.attr("content")
-                ?.ifBlank { doc.select("source[src]").firstOrNull()?.attr("src") ?: "" }
-                ?.trim()
+    fun playFromUrl(url: String): String {
 
-            val normalized = when {
-                direct.isNullOrBlank() -> null
-                direct.startsWith("//") -> "https:$direct"
-                direct.startsWith("http") -> direct
-                else -> URL(URL(url), direct).toString()
-            }
-            normalized
-        }.getOrNull()
+        return if (url.contains("drive.google.com"))
+            convertDriveUrl(url)
+        else
+            url
     }
 
     /**
      * Download a video from [url] into permanent user-visible storage.
      *
-     * Previous bug: files were saved to context.cacheDir which is:
-     *  - Volatile (cleared by system at any time)
-     *  - Not visible in Files app or any media picker
-     *  - Never indexed by MediaStore
+     * Previous bug: files were saved to context.cacheDir which is volatile,
+     * not visible in Files app, and never indexed by MediaStore.
      *
-     * Fix: use MediaStore.Downloads (API 29+) with the IS_PENDING lifecycle,
-     * or getExternalFilesDir on older devices.
-     *
-     * Returns the display name of the saved file on success, null on failure.
+     * Fix: use MediaStore.Downloads (API 29+) with the IS_PENDING lifecycle.
+     * IS_PENDING=1 reserves the row; IS_PENDING=0 publishes it after bytes are written.
+     * On failure the orphaned pending row is deleted so no ghost entries appear.
      */
     suspend fun downloadFromUrl(url: String, title: String = ""): String? = withContext(Dispatchers.IO) {
         runCatching {
@@ -186,11 +304,7 @@ class StreamingRepository @Inject constructor(
         }.getOrNull()
     }
 
-    private fun saveToDownloadsQ(
-        body: okhttp3.ResponseBody,
-        fileName: String,
-        mimeType: String
-    ): String? {
+    private fun saveToDownloadsQ(body: okhttp3.ResponseBody, fileName: String, mimeType: String): String? {
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val cv = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -200,16 +314,8 @@ class StreamingRepository @Inject constructor(
         }
         val uri: Uri = context.contentResolver.insert(collection, cv) ?: return null
         return try {
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                body.byteStream().copyTo(out)
-            }
-            // Clear IS_PENDING to publish the file — without this the file stays invisible
-            context.contentResolver.update(
-                uri,
-                ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) },
-                null,
-                null
-            )
+            context.contentResolver.openOutputStream(uri)?.use { body.byteStream().copyTo(it) }
+            context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
             fileName
         } catch (e: Exception) {
             runCatching { context.contentResolver.delete(uri, null, null) }
@@ -218,21 +324,13 @@ class StreamingRepository @Inject constructor(
     }
 
     @Suppress("DEPRECATION")
-    private fun saveToDownloadsLegacy(
-        body: okhttp3.ResponseBody,
-        fileName: String,
-        mimeType: String
-    ): String? {
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?.resolve("UniStream")
-            ?: return null
+    private fun saveToDownloadsLegacy(body: okhttp3.ResponseBody, fileName: String, mimeType: String): String? {
+        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.resolve("UniStream") ?: return null
         dir.mkdirs()
         val file = File(dir, fileName)
         return try {
-            file.outputStream().use { out -> body.byteStream().copyTo(out) }
-            android.media.MediaScannerConnection.scanFile(
-                context, arrayOf(file.absolutePath), arrayOf(mimeType), null
-            )
+            file.outputStream().use { body.byteStream().copyTo(it) }
+            android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mimeType), null)
             fileName
         } catch (e: Exception) {
             file.delete()
