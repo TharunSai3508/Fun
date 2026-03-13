@@ -8,6 +8,13 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+sealed class UrlDownloadState {
+    object Idle : UrlDownloadState()
+    object Loading : UrlDownloadState()
+    object Success : UrlDownloadState()
+    data class Error(val message: String) : UrlDownloadState()
+}
+
 data class GalleryUiState(
     val allMedia: List<MediaItem> = emptyList(),
     val filteredMedia: List<MediaItem> = emptyList(),
@@ -19,7 +26,9 @@ data class GalleryUiState(
     val searchQuery: String = "",
     val isLoading: Boolean = false,
     val isSelectionMode: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val urlDownloadState: UrlDownloadState = UrlDownloadState.Idle,
+    val showUrlDownloadDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -110,6 +119,13 @@ class GalleryViewModel @Inject constructor(
         }
     }
 
+    fun selectAll() {
+        _uiState.update { state ->
+            val allIds = state.filteredMedia.map { it.id }.toSet()
+            state.copy(selectedMedia = allIds, isSelectionMode = allIds.isNotEmpty())
+        }
+    }
+
     fun clearSelection() {
         _uiState.update { it.copy(selectedMedia = emptySet(), isSelectionMode = false) }
     }
@@ -136,5 +152,42 @@ class GalleryViewModel @Inject constructor(
             clearSelection()
             loadMedia()
         }
+    }
+
+    fun showUrlDownloadDialog() {
+        _uiState.update { it.copy(showUrlDownloadDialog = true) }
+    }
+
+    fun dismissUrlDownloadDialog() {
+        _uiState.update {
+            it.copy(
+                showUrlDownloadDialog = false,
+                urlDownloadState = UrlDownloadState.Idle
+            )
+        }
+    }
+
+    fun downloadUrlToGallery(url: String) {
+        if (url.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Loading) }
+            val success = repository.downloadMediaFromUrl(url)
+            _uiState.update {
+                it.copy(
+                    urlDownloadState = if (success) {
+                        UrlDownloadState.Success
+                    } else {
+                        UrlDownloadState.Error("Download failed. Check the URL and try again.")
+                    }
+                )
+            }
+            if (success) {
+                loadMedia() // Refresh gallery to show new file
+            }
+        }
+    }
+
+    fun resetUrlDownloadState() {
+        _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Idle) }
     }
 }

@@ -1,7 +1,11 @@
 package com.unistream.streaming.data
 
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -134,19 +138,105 @@ class StreamingRepository @Inject constructor(
         }.getOrNull()
     }
 
-    suspend fun downloadFromUrl(url: String): String? = withContext(Dispatchers.IO) {
+    /**
+     * Download a video from [url] into permanent user-visible storage.
+     *
+     * Previous bug: files were saved to context.cacheDir which is:
+     *  - Volatile (cleared by system at any time)
+     *  - Not visible in Files app or any media picker
+     *  - Never indexed by MediaStore
+     *
+     * Fix: use MediaStore.Downloads (API 29+) with the IS_PENDING lifecycle,
+     * or getExternalFilesDir on older devices.
+     *
+     * Returns the display name of the saved file on success, null on failure.
+     */
+    suspend fun downloadFromUrl(url: String, title: String = ""): String? = withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder().url(url).build()
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .header("Accept", "video/*,*/*;q=0.8")
+                .build()
+
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val body = response.body ?: return@use null
-                val dir = File(context.cacheDir, "downloads").apply { mkdirs() }
-                val file = File(dir, "stream_${System.currentTimeMillis()}.mp4")
-                body.byteStream().use { input ->
-                    file.outputStream().use { output -> input.copyTo(output) }
+
+                val contentType = response.header("Content-Type") ?: "video/mp4"
+                val mimeType = contentType.substringBefore(";").trim().ifBlank { "video/mp4" }
+                val ext = when {
+                    mimeType.contains("mp4") -> "mp4"
+                    mimeType.contains("webm") -> "webm"
+                    mimeType.contains("x-matroska") -> "mkv"
+                    url.endsWith(".mkv", ignoreCase = true) -> "mkv"
+                    url.endsWith(".webm", ignoreCase = true) -> "webm"
+                    else -> "mp4"
                 }
-                file.absolutePath
+                val safeTitle = title.ifBlank { "stream_${System.currentTimeMillis()}" }
+                    .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                val fileName = "$safeTitle.$ext"
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    saveToDownloadsQ(body, fileName, mimeType)
+                } else {
+                    saveToDownloadsLegacy(body, fileName, mimeType)
+                }
             }
         }.getOrNull()
+    }
+
+    private fun saveToDownloadsQ(
+        body: okhttp3.ResponseBody,
+        fileName: String,
+        mimeType: String
+    ): String? {
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val cv = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, mimeType)
+            put(MediaStore.Downloads.RELATIVE_PATH, "Download/UniStream")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri: Uri = context.contentResolver.insert(collection, cv) ?: return null
+        return try {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                body.byteStream().copyTo(out)
+            }
+            // Clear IS_PENDING to publish the file — without this the file stays invisible
+            context.contentResolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) },
+                null,
+                null
+            )
+            fileName
+        } catch (e: Exception) {
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            null
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun saveToDownloadsLegacy(
+        body: okhttp3.ResponseBody,
+        fileName: String,
+        mimeType: String
+    ): String? {
+        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?.resolve("UniStream")
+            ?: return null
+        dir.mkdirs()
+        val file = File(dir, fileName)
+        return try {
+            file.outputStream().use { out -> body.byteStream().copyTo(out) }
+            android.media.MediaScannerConnection.scanFile(
+                context, arrayOf(file.absolutePath), arrayOf(mimeType), null
+            )
+            fileName
+        } catch (e: Exception) {
+            file.delete()
+            null
+        }
     }
 }

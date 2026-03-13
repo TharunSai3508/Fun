@@ -2,20 +2,25 @@ package com.unistream.gallery.data
 
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class GalleryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val hiddenMediaDao: HiddenMediaDao
+    private val hiddenMediaDao: HiddenMediaDao,
+    private val okHttpClient: OkHttpClient
 ) {
     private val contentResolver: ContentResolver = context.contentResolver
 
@@ -218,6 +223,130 @@ class GalleryRepository @Inject constructor(
 
     suspend fun unhideMedia(entity: HiddenMediaEntity) {
         hiddenMediaDao.deleteHiddenMedia(entity)
+    }
+
+    /**
+     * Download media from a URL into the device gallery.
+     *
+     * Fix for blank black image bug: the original code (if it existed) would set IS_PENDING=1
+     * but never clear it to 0, leaving MediaStore with a 0-byte placeholder that renders as
+     * a black thumbnail. This implementation clears IS_PENDING after bytes are written,
+     * and deletes the orphaned row on failure.
+     */
+    suspend fun downloadMediaFromUrl(url: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .header("Accept", "image/*,video/*,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use false
+                val body = response.body ?: return@use false
+
+                // Determine MIME type from Content-Type header, fallback to URL extension
+                val contentType = response.header("Content-Type") ?: ""
+                val mimeType = when {
+                    contentType.contains("video/") -> contentType.substringBefore(";").trim()
+                    contentType.contains("image/") -> contentType.substringBefore(";").trim()
+                    url.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
+                    url.endsWith(".gif", ignoreCase = true) -> "image/gif"
+                    url.endsWith(".png", ignoreCase = true) -> "image/png"
+                    url.endsWith(".webp", ignoreCase = true) -> "image/webp"
+                    url.endsWith(".jpg", ignoreCase = true) || url.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+                    else -> "image/jpeg"
+                }
+                val isVideo = mimeType.startsWith("video/")
+                val ext = mimeType.substringAfter("/").replace("jpeg", "jpg").substringBefore(";")
+                val fileName = "unistream_${System.currentTimeMillis()}.$ext"
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    saveViaMediaStoreQ(body, fileName, mimeType, isVideo)
+                } else {
+                    saveViaLegacyExternalStorage(body, fileName, mimeType, isVideo)
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun saveViaMediaStoreQ(
+        body: okhttp3.ResponseBody,
+        fileName: String,
+        mimeType: String,
+        isVideo: Boolean
+    ): Boolean {
+        val collection = if (isVideo) {
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        }
+
+        val cv = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(
+                MediaStore.MediaColumns.RELATIVE_PATH,
+                if (isVideo) "Movies/UniStream" else "Pictures/UniStream"
+            )
+            // Reserve the row — file is incomplete until IS_PENDING is cleared
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+
+        val uri: Uri = contentResolver.insert(collection, cv) ?: return false
+
+        return try {
+            contentResolver.openOutputStream(uri)?.use { outputStream ->
+                body.byteStream().copyTo(outputStream)
+            }
+            // CRITICAL: clear IS_PENDING so MediaStore publishes the file.
+            // Without this step the row stays as a 0-byte pending placeholder,
+            // which the gallery renders as a blank black thumbnail.
+            contentResolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                null,
+                null
+            )
+            true
+        } catch (e: Exception) {
+            // Delete the orphaned pending placeholder so it doesn't pollute the gallery
+            runCatching { contentResolver.delete(uri, null, null) }
+            false
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun saveViaLegacyExternalStorage(
+        body: okhttp3.ResponseBody,
+        fileName: String,
+        mimeType: String,
+        isVideo: Boolean
+    ): Boolean {
+        val dir = if (isVideo) {
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_MOVIES
+            ).resolve("UniStream")
+        } else {
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_PICTURES
+            ).resolve("UniStream")
+        }
+        dir.mkdirs()
+        val file = java.io.File(dir, fileName)
+
+        return try {
+            file.outputStream().use { out -> body.byteStream().copyTo(out) }
+            // Notify MediaScanner so the file appears in the gallery immediately
+            android.media.MediaScannerConnection.scanFile(
+                context, arrayOf(file.absolutePath), arrayOf(mimeType), null
+            )
+            true
+        } catch (e: Exception) {
+            file.delete()
+            false
+        }
     }
 }
 
