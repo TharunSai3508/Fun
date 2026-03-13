@@ -7,6 +7,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import com.unistream.core.network.ResolvedMedia
+import com.unistream.core.network.UniversalMediaResolver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -20,7 +22,8 @@ import javax.inject.Singleton
 class GalleryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val hiddenMediaDao: HiddenMediaDao,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val resolver: UniversalMediaResolver
 ) {
     private val contentResolver: ContentResolver = context.contentResolver
 
@@ -203,6 +206,20 @@ class GalleryRepository @Inject constructor(
     }
 
     /**
+     * Step 1 of gallery URL import: resolve [url] to a list of downloadable media options.
+     * The user can then pick which item to save.
+     */
+    suspend fun resolveMediaFromUrl(url: String): List<ResolvedMedia> =
+        resolver.resolve(url)
+
+    /**
+     * Step 2 of gallery URL import: download a [ResolvedMedia] item obtained from [resolveMediaFromUrl].
+     * Delegates directly to [downloadMediaFromUrl] with the resolved direct URL.
+     */
+    suspend fun downloadResolvedMedia(media: ResolvedMedia): Boolean =
+        downloadMediaFromUrl(media.url, media.mimeType)
+
+    /**
      * Download media from a URL into the device gallery.
      *
      * Root cause of blank black image bug: IS_PENDING=1 was set on MediaStore insert but
@@ -212,7 +229,7 @@ class GalleryRepository @Inject constructor(
      * Fix: write all bytes first, then clear IS_PENDING=0. On any exception, delete the
      * orphaned pending row so no black placeholder ever appears in the gallery.
      */
-    suspend fun downloadMediaFromUrl(url: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun downloadMediaFromUrl(url: String, knownMime: String? = null): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val request = Request.Builder()
                 .url(url)
@@ -229,12 +246,8 @@ class GalleryRepository @Inject constructor(
                 val mimeType = when {
                     contentType.contains("video/") -> contentType.substringBefore(";").trim()
                     contentType.contains("image/") -> contentType.substringBefore(";").trim()
-                    url.endsWith(".mp4", ignoreCase = true) -> "video/mp4"
-                    url.endsWith(".gif", ignoreCase = true) -> "image/gif"
-                    url.endsWith(".png", ignoreCase = true) -> "image/png"
-                    url.endsWith(".webp", ignoreCase = true) -> "image/webp"
-                    url.endsWith(".jpg", ignoreCase = true) || url.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
-                    else -> "image/jpeg"
+                    knownMime != null -> knownMime
+                    else -> resolver.detectMimeFromUrl(url) ?: "image/jpeg"
                 }
                 val isVideo = mimeType.startsWith("video/")
                 val ext = mimeType.substringAfter("/").replace("jpeg", "jpg").substringBefore(";")

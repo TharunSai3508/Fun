@@ -4,12 +4,15 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,16 +26,20 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.videoFrameMillis
+import com.unistream.core.network.ResolvedMedia
 import com.unistream.core.ui.theme.GalleryTheme
 import com.unistream.gallery.data.MediaFilter
 import com.unistream.gallery.data.MediaItem
 import com.unistream.gallery.data.SortOrder
 import com.unistream.gallery.viewmodel.GalleryViewModel
+import com.unistream.gallery.viewmodel.UrlDownloadState
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -186,39 +193,252 @@ fun GalleryScreen(
         }
 
         if (showImportDialog) {
-
-            var url by remember { mutableStateOf("") }
-
-            AlertDialog(
-                onDismissRequest = { showImportDialog = false },
-                confirmButton = {
-
-                    TextButton(
-                        onClick = {
-                            viewModel.importFromUrl(url)
-                            showImportDialog = false
-                        }
-                    ) {
-                        Text("Download")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showImportDialog = false }) {
-                        Text("Cancel")
-                    }
-                },
-                title = { Text("Import Image from URL") },
-                text = {
-
-                    TextField(
-                        value = url,
-                        onValueChange = { url = it },
-                        placeholder = { Text("https://example.com/image.jpg") },
-                        singleLine = true
-                    )
+            MediaImportDialog(
+                uiState = uiState,
+                onResolve = viewModel::resolveUrl,
+                onDownload = viewModel::downloadResolvedMedia,
+                onDismiss = {
+                    showImportDialog = false
+                    viewModel.resetUrlDownloadState()
                 }
             )
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Media Import Dialog — resolve URL → show options → download chosen item
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MediaImportDialog(
+    uiState: com.unistream.gallery.viewmodel.GalleryUiState,
+    onResolve: (String) -> Unit,
+    onDownload: (ResolvedMedia) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var urlInput by remember { mutableStateOf("") }
+    val downloadState = uiState.urlDownloadState
+    val options = uiState.resolvedMediaOptions
+
+    // Auto-dismiss after success
+    LaunchedEffect(downloadState) {
+        if (downloadState is UrlDownloadState.Success) {
+            kotlinx.coroutines.delay(1200)
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Title
+            Text(
+                "Import Media from URL",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            )
+
+            Text(
+                "Paste any webpage URL or direct media link — works with Reddit, Imgur, Redgifs, Google Drive, and more.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // URL input
+            OutlinedTextField(
+                value = urlInput,
+                onValueChange = { urlInput = it },
+                label = { Text("URL") },
+                placeholder = { Text("https://reddit.com/r/…  or  https://site.com/image.jpg") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                leadingIcon = { Icon(Icons.Default.Link, null) },
+                trailingIcon = {
+                    if (urlInput.isNotBlank()) {
+                        IconButton(onClick = { urlInput = "" }) {
+                            Icon(Icons.Default.Clear, null)
+                        }
+                    }
+                },
+                enabled = downloadState !is UrlDownloadState.Resolving && downloadState !is UrlDownloadState.Downloading
+            )
+
+            // State feedback
+            when (downloadState) {
+                is UrlDownloadState.Resolving -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Extracting media…", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                is UrlDownloadState.Downloading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Saving to gallery…", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                is UrlDownloadState.Success -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Saved to gallery!", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                is UrlDownloadState.Error -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(10.dp))
+                            .padding(12.dp)
+                    ) {
+                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Text(downloadState.message, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                else -> {}
+            }
+
+            // Media options picker — shown when resolver returned multiple results
+            if (options.size > 1) {
+                Text("Choose media to save:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .heightIn(max = 280.dp)
+                        .fillMaxWidth()
+                ) {
+                    items(options) { media ->
+                        ResolvedMediaRow(media = media, onSelect = { onDownload(media) })
+                    }
+                }
+            }
+
+            // Extract button (shown when not yet resolved and no results)
+            if (options.isEmpty() && downloadState !is UrlDownloadState.Success) {
+                Button(
+                    onClick = { onResolve(urlInput) },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    enabled = urlInput.isNotBlank()
+                            && downloadState !is UrlDownloadState.Resolving
+                            && downloadState !is UrlDownloadState.Downloading,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Search, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Extract Media", style = MaterialTheme.typography.titleSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResolvedMediaRow(media: ResolvedMedia, onSelect: () -> Unit) {
+    val context = LocalContext.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onSelect),
+        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Thumbnail
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                if (media.thumbnailUrl != null || media.isImage) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(media.thumbnailUrl ?: media.url)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                // Type icon overlay
+                val typeIcon = when {
+                    media.isStream -> Icons.Default.Stream
+                    media.isVideo -> Icons.Default.PlayCircle
+                    media.isGif -> Icons.Default.Gif
+                    else -> Icons.Default.Image
+                }
+                if (!media.isImage || media.thumbnailUrl == null) {
+                    Icon(typeIcon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                }
+            }
+
+            // Info
+            Column(modifier = Modifier.weight(1f)) {
+                if (media.title.isNotBlank()) {
+                    Text(media.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (media.quality.isNotBlank()) {
+                        QualityChip(media.quality)
+                    }
+                    val typeLabel = when {
+                        media.isStream -> "Stream"
+                        media.isVideo -> "Video"
+                        media.isGif -> "GIF"
+                        else -> "Image"
+                    }
+                    QualityChip(typeLabel)
+                }
+                Text(
+                    media.url.substringAfterLast("/").substringBefore("?").take(40),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+
+            Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun QualityChip(label: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
     }
 }
 

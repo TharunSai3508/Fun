@@ -7,13 +7,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.unistream.core.network.UniversalMediaResolver
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.jsoup.Jsoup
 import java.io.File
 import java.net.URL
 import javax.inject.Inject
@@ -24,7 +24,8 @@ class StreamingRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val playlistDao: PlaylistDao,
     private val watchHistoryDao: WatchHistoryDao,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val mediaResolver: UniversalMediaResolver
 ) {
 
     // ---------------------------------------------------------
@@ -191,61 +192,29 @@ class StreamingRepository @Inject constructor(
     // RESOLVE PLAYABLE URL
     // ---------------------------------------------------------
 
-    suspend fun resolvePlayableUrl(url: String): String? =
-        withContext(Dispatchers.IO) {
-
-            if (
-                url.startsWith("content://") ||
-                url.endsWith(".mp4", true) ||
-                url.endsWith(".m3u8", true) ||
-                url.endsWith(".mpd", true)
-            ) {
-                return@withContext url
-            }
-
-            runCatching {
-
-                val doc = Jsoup.connect(url)
-                    .userAgent("Mozilla/5.0")
-                    .timeout(15000)
-                    .get()
-
-                val videoSrc =
-                    doc.select("video source[src], meta[property=og:video], meta[property=og:video:url]")
-                        .firstOrNull()
-
-                val raw = when {
-
-                    videoSrc == null -> null
-
-                    videoSrc.hasAttr("src") ->
-                        videoSrc.attr("src")
-
-                    videoSrc.hasAttr("content") ->
-                        videoSrc.attr("content")
-
-                    else -> null
-                }
-
-                val normalized = when {
-
-                    raw.isNullOrBlank() ->
-                        null
-
-                    raw.startsWith("//") ->
-                        "https:$raw"
-
-                    raw.startsWith("http") ->
-                        raw
-
-                    else ->
-                        URL(URL(url), raw).toString()
-                }
-
-                normalized
-
-            }.getOrNull()
+    /**
+     * Resolves any URL (webpage, share link, direct CDN link) to a playable stream URL.
+     *
+     * Previously used basic Jsoup extraction which only found og:video on simple pages.
+     * Now delegates to UniversalMediaResolver which handles Reddit, Imgur, Redgifs,
+     * Streamable, Pixeldrain, Google Drive, and generic HTML with multiple selector
+     * fallbacks — the same approach used by SaveFrom / cobalt.tools.
+     */
+    suspend fun resolvePlayableUrl(url: String): String? = withContext(Dispatchers.IO) {
+        // Direct playable URLs need no resolution
+        if (url.startsWith("content://") || mediaResolver.detectMimeFromUrl(url) != null) {
+            return@withContext url
         }
+
+        val candidates = mediaResolver.resolve(url)
+
+        // Prefer video streams; fall back to any media; return null if nothing found
+        return@withContext candidates
+            .sortedWith(compareByDescending<com.unistream.core.network.ResolvedMedia> { it.isVideo }
+                .thenByDescending { it.quality.contains("HD", ignoreCase = true) })
+            .firstOrNull()
+            ?.url
+    }
 
     // ---------------------------------------------------------
     // PLAY FROM URL

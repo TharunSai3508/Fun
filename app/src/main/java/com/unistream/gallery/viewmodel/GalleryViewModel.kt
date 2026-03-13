@@ -2,6 +2,7 @@ package com.unistream.gallery.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.unistream.core.network.ResolvedMedia
 import com.unistream.gallery.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -10,7 +11,10 @@ import javax.inject.Inject
 
 sealed class UrlDownloadState {
     object Idle : UrlDownloadState()
-    object Loading : UrlDownloadState()
+    /** Fetching media list from the URL (resolve step). */
+    object Resolving : UrlDownloadState()
+    /** Saving the chosen media item to gallery storage. */
+    object Downloading : UrlDownloadState()
     object Success : UrlDownloadState()
     data class Error(val message: String) : UrlDownloadState()
 }
@@ -28,7 +32,9 @@ data class GalleryUiState(
     val isSelectionMode: Boolean = false,
     val errorMessage: String? = null,
     val urlDownloadState: UrlDownloadState = UrlDownloadState.Idle,
-    val showUrlDownloadDialog: Boolean = false
+    val showUrlDownloadDialog: Boolean = false,
+    /** Media options extracted from the URL — shown after resolve completes. */
+    val resolvedMediaOptions: List<ResolvedMedia> = emptyList()
 )
 
 @HiltViewModel
@@ -155,19 +161,65 @@ class GalleryViewModel @Inject constructor(
     }
 
     fun showUrlDownloadDialog() {
-        _uiState.update { it.copy(showUrlDownloadDialog = true) }
+        _uiState.update { it.copy(showUrlDownloadDialog = true, resolvedMediaOptions = emptyList(), urlDownloadState = UrlDownloadState.Idle) }
     }
 
     fun dismissUrlDownloadDialog() {
         _uiState.update {
-            it.copy(showUrlDownloadDialog = false, urlDownloadState = UrlDownloadState.Idle)
+            it.copy(showUrlDownloadDialog = false, urlDownloadState = UrlDownloadState.Idle, resolvedMediaOptions = emptyList())
         }
     }
 
+    /**
+     * Step 1 — resolve [url] to a list of media options.
+     * Results are stored in [GalleryUiState.resolvedMediaOptions].
+     * If only one option is found and it is a direct link, skip the picker and download immediately.
+     */
+    fun resolveUrl(url: String) {
+        if (url.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Resolving, resolvedMediaOptions = emptyList()) }
+            val options = repository.resolveMediaFromUrl(url)
+            when {
+                options.isEmpty() -> _uiState.update {
+                    it.copy(urlDownloadState = UrlDownloadState.Error("No media found at this URL. Try pasting the direct file link."))
+                }
+                options.size == 1 -> {
+                    // Skip picker — download the single found item automatically
+                    _uiState.update { it.copy(resolvedMediaOptions = options) }
+                    downloadResolvedMedia(options.first())
+                }
+                else -> _uiState.update {
+                    it.copy(resolvedMediaOptions = options, urlDownloadState = UrlDownloadState.Idle)
+                }
+            }
+        }
+    }
+
+    /**
+     * Step 2 — download a specific [ResolvedMedia] item that was returned by [resolveUrl].
+     */
+    fun downloadResolvedMedia(media: ResolvedMedia) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Downloading) }
+            val success = repository.downloadResolvedMedia(media)
+            _uiState.update {
+                it.copy(
+                    urlDownloadState = if (success) UrlDownloadState.Success
+                    else UrlDownloadState.Error("Download failed. Check your storage permissions.")
+                )
+            }
+            if (success) {
+                loadMedia()
+            }
+        }
+    }
+
+    /** Legacy convenience for direct URL downloads (no resolve step). */
     fun downloadUrlToGallery(url: String) {
         if (url.isBlank()) return
         viewModelScope.launch {
-            _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Loading) }
+            _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Downloading) }
             val success = repository.downloadMediaFromUrl(url)
             _uiState.update {
                 it.copy(
@@ -180,6 +232,6 @@ class GalleryViewModel @Inject constructor(
     }
 
     fun resetUrlDownloadState() {
-        _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Idle) }
+        _uiState.update { it.copy(urlDownloadState = UrlDownloadState.Idle, resolvedMediaOptions = emptyList()) }
     }
 }
