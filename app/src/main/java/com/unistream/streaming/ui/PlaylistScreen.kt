@@ -26,10 +26,6 @@ import com.unistream.core.ui.theme.StreamingTheme
 import com.unistream.streaming.data.PlaylistItemEntity
 import com.unistream.streaming.viewmodel.StreamingViewModel
 
-private val PlaylistBg = Color(0xFF0D0D0D)
-private val PlaylistSurface = Color(0xFF1A1A1A)
-private val PlaylistRed = Color(0xFFE50914)
-
 @Composable
 fun PlaylistScreen(
     playlistId: Long,
@@ -42,7 +38,7 @@ fun PlaylistScreen(
 
     StreamingTheme {
         Scaffold(
-            containerColor = PlaylistBg,
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 @OptIn(ExperimentalMaterial3Api::class)
                 TopAppBar(
@@ -71,7 +67,7 @@ fun PlaylistScreen(
                             Icon(Icons.Default.Shuffle, null, tint = Color.White)
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = PlaylistBg)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
                 )
             }
         ) { paddingValues ->
@@ -186,13 +182,13 @@ private fun NetflixListItem(
         )
 
         // Thumbnail with progress
-        Box(
-            modifier = Modifier
-                .width(130.dp)
-                .height(73.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(PlaylistSurface)
-        ) {
+                Box(
+                    modifier = Modifier
+                        .width(130.dp)
+                        .height(73.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                ) {
             AsyncImage(
                 model = thumbnailUri,
                 contentDescription = title,
@@ -243,7 +239,7 @@ private fun NetflixListItem(
                         modifier = Modifier
                             .fillMaxWidth(progressPercent)
                             .fillMaxHeight()
-                            .background(PlaylistRed)
+                            .background(MaterialTheme.colorScheme.primary)
                     )
                 }
             }
