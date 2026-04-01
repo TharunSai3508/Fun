@@ -8,8 +8,10 @@ import com.unistream.gallery.data.HiddenMediaDao
 import com.unistream.streaming.data.PlaylistEntity
 import com.unistream.streaming.data.PlaylistItemEntity
 import com.unistream.streaming.data.WatchHistoryEntity
+import com.unistream.streaming.data.HiddenVideoEntity
 import com.unistream.streaming.data.PlaylistDao
 import com.unistream.streaming.data.WatchHistoryDao
+import com.unistream.streaming.data.HiddenVideoDao
 import com.unistream.webnovel.data.NovelEntity
 import com.unistream.webnovel.data.ChapterEntity
 import com.unistream.webnovel.data.BookmarkEntity
@@ -26,13 +28,14 @@ import com.unistream.webnovel.data.BookmarkDao
         PlaylistEntity::class,
         PlaylistItemEntity::class,
         WatchHistoryEntity::class,
+        HiddenVideoEntity::class,
         // WebNovel
         NovelEntity::class,
         ChapterEntity::class,
         BookmarkEntity::class,
         ReadingProgressEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(DatabaseConverters::class)
@@ -44,6 +47,7 @@ abstract class AppDatabase : RoomDatabase() {
     // Streaming DAOs
     abstract fun playlistDao(): PlaylistDao
     abstract fun watchHistoryDao(): WatchHistoryDao
+    abstract fun hiddenVideoDao(): HiddenVideoDao
 
     // WebNovel DAOs
     abstract fun novelDao(): NovelDao

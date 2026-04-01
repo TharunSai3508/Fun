@@ -7,6 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,11 +33,14 @@ import com.unistream.core.ui.theme.StreamingTheme
 import com.unistream.streaming.data.VideoSource
 import com.unistream.streaming.data.WatchHistoryEntity
 import com.unistream.streaming.viewmodel.StreamingViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val StreamBg = Color(0xFF0D0D0D)
 private val StreamSurface = Color(0xFF1A1A1A)
 private val StreamRed = Color(0xFFE50914)
+private val StreamDarkGray = Color(0xFF141414)
+private val StreamGold = Color(0xFFFFD700)
 
 private val CATEGORIES = listOf("All", "Movies", "Series", "Sports", "Music", "Kids")
 
@@ -42,6 +49,7 @@ private val CATEGORIES = listOf("All", "Movies", "Series", "Sports", "Music", "K
 fun StreamingHomeScreen(
     onNavigateToPlayer: (String, String) -> Unit,
     onNavigateToPlaylist: (Long) -> Unit,
+    onNavigateToHiddenVideos: () -> Unit = {},
     onBack: () -> Unit,
     viewModel: StreamingViewModel = hiltViewModel()
 ) {
@@ -54,33 +62,18 @@ fun StreamingHomeScreen(
     var searchQuery by remember { mutableStateOf("") }
 
     val filteredVideos = remember(uiState.localVideos, selectedCategory) {
-
         when (CATEGORIES[selectedCategory]) {
-
-            "Movies" ->
-                uiState.localVideos.filter { it.title.contains("movie", true) }
-
-            "Series" ->
-                uiState.localVideos.filter {
-                    it.title.contains("episode", true) ||
-                            it.title.contains("series", true)
-                }
-
-            "Sports" ->
-                uiState.localVideos.filter { it.title.contains("sport", true) }
-
-            "Music" ->
-                uiState.localVideos.filter {
-                    it.title.contains("music", true) ||
-                            it.title.contains("song", true)
-                }
-
-            "Kids" ->
-                uiState.localVideos.filter {
-                    it.title.contains("kids", true) ||
-                            it.title.contains("cartoon", true)
-                }
-
+            "Movies" -> uiState.localVideos.filter { it.title.contains("movie", true) }
+            "Series" -> uiState.localVideos.filter {
+                it.title.contains("episode", true) || it.title.contains("series", true)
+            }
+            "Sports" -> uiState.localVideos.filter { it.title.contains("sport", true) }
+            "Music" -> uiState.localVideos.filter {
+                it.title.contains("music", true) || it.title.contains("song", true)
+            }
+            "Kids" -> uiState.localVideos.filter {
+                it.title.contains("kids", true) || it.title.contains("cartoon", true)
+            }
             else -> uiState.localVideos
         }
     }
@@ -91,9 +84,7 @@ fun StreamingHomeScreen(
             containerColor = StreamBg,
 
             topBar = {
-
                 Column {
-
                     StreamingTopBar(
                         searchExpanded = searchExpanded,
                         searchQuery = searchQuery,
@@ -104,11 +95,11 @@ fun StreamingHomeScreen(
                         onSearchChange = { searchQuery = it },
                         onBack = onBack,
                         onAddUrl = { viewModel.showUrlDialog(true) },
-                        onCreatePlaylist = { viewModel.createPlaylist("New Playlist") }
+                        onCreatePlaylist = { viewModel.createPlaylist("New Playlist") },
+                        onHiddenVideos = onNavigateToHiddenVideos
                     )
 
                     AnimatedVisibility(visible = !searchExpanded) {
-
                         StreamingCategoryTabs(
                             categories = CATEGORIES,
                             selectedIndex = selectedCategory,
@@ -125,46 +116,36 @@ fun StreamingHomeScreen(
                     .padding(paddingValues)
             ) {
 
+                // Hero Banner with pager
                 item {
-
-                    StreamingHeroBanner(
+                    NetflixHeroBanner(
                         videos = filteredVideos.take(5),
                         onPlayClick = { source ->
-
                             viewModel.recordWatch(source)
-
-                            onNavigateToPlayer(
-                                "local",
-                                source.uri
-                            )
+                            onNavigateToPlayer("local", source.uri)
+                        },
+                        onMyListClick = {
+                            val playlist = uiState.playlists.firstOrNull()
+                            if (playlist != null) {
+                                viewModel.addToPlaylist(playlist.id, it)
+                            }
                         }
                     )
                 }
 
+                // Continue Watching
                 if (uiState.continueWatching.isNotEmpty()) {
-
                     item {
-
-                        ContentSection(
-                            title = "Continue Watching",
-                            icon = Icons.Default.PlayCircle
-                        ) {
-
+                        ContentSection(title = "Continue Watching", icon = Icons.Default.PlayCircle) {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-
                                 items(uiState.continueWatching) { history ->
-
                                     ContinueWatchingCard(
                                         history = history,
                                         onClick = {
-
-                                            onNavigateToPlayer(
-                                                history.sourceType,
-                                                history.sourceUri
-                                            )
+                                            onNavigateToPlayer(history.sourceType, history.sourceUri)
                                         }
                                     )
                                 }
@@ -173,40 +154,92 @@ fun StreamingHomeScreen(
                     }
                 }
 
-                if (filteredVideos.isNotEmpty()) {
-
+                // Top 10 row
+                if (filteredVideos.size >= 3) {
                     item {
+                        ContentSection(title = "Top 10 on Device", icon = Icons.Default.TrendingUp) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                itemsIndexed(filteredVideos.take(10)) { index, source ->
+                                    Top10Card(
+                                        rank = index + 1,
+                                        source = source,
+                                        onClick = {
+                                            viewModel.recordWatch(source)
+                                            onNavigateToPlayer("local", source.uri)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
-                        ContentSection(
-                            title = "From Device",
-                            icon = Icons.Default.Smartphone
-                        ) {
-
+                // My List (playlists)
+                if (uiState.playlists.isNotEmpty()) {
+                    item {
+                        ContentSection(title = "My List", icon = Icons.Default.BookmarkBorder) {
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+                                items(uiState.playlists) { playlist ->
+                                    PlaylistCard(
+                                        name = playlist.name,
+                                        thumbnailUri = playlist.thumbnailUri,
+                                        onClick = { onNavigateToPlaylist(playlist.id) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
+                // From Device
+                if (filteredVideos.isNotEmpty()) {
+                    item {
+                        ContentSection(title = "From Device", icon = Icons.Default.Smartphone) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
                                 items(filteredVideos.take(20)) { source ->
-
                                     VideoCard(
                                         source = source,
                                         onClick = {
-
                                             viewModel.recordWatch(source)
-
-                                            onNavigateToPlayer(
-                                                "local",
-                                                source.uri
-                                            )
+                                            onNavigateToPlayer("local", source.uri)
                                         },
                                         onAddToPlaylist = {
-
                                             viewModel.addToPlaylist(
                                                 playlistId = uiState.playlists.firstOrNull()?.id
                                                     ?: return@VideoCard,
                                                 source = source
                                             )
+                                        },
+                                        onHide = { viewModel.hideVideo(source) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Watch History
+                if (uiState.watchHistory.isNotEmpty()) {
+                    item {
+                        ContentSection(title = "Recently Watched", icon = Icons.Default.History) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(uiState.watchHistory.take(15)) { history ->
+                                    ContinueWatchingCard(
+                                        history = history,
+                                        onClick = {
+                                            onNavigateToPlayer(history.sourceType, history.sourceUri)
                                         }
                                     )
                                 }
@@ -219,56 +252,57 @@ fun StreamingHomeScreen(
             }
         }
 
+        // URL Dialog
         if (uiState.showUrlDialog) {
-
             StreamUrlDialog(
                 urlInput = uiState.urlInput,
+                isDownloading = uiState.isDownloading,
                 onUrlChange = viewModel::setUrlInput,
-
                 onPlay = { url ->
-
                     scope.launch {
-
                         val source = viewModel.prepareUrlSource(url)
-
                         if (source != null) {
-
                             viewModel.showUrlDialog(false)
-
                             viewModel.recordWatch(source)
-
-                            onNavigateToPlayer(
-                                source.type.name,
-                                source.uri
-                            )
+                            onNavigateToPlayer(source.type.name, source.uri)
                         }
                     }
                 },
-
                 onDownload = { url ->
-
                     scope.launch {
                         viewModel.downloadVideo(url)
                         viewModel.showUrlDialog(false)
                     }
                 },
-
                 onDismiss = { viewModel.showUrlDialog(false) }
             )
         }
 
+        // Error/Success snackbar
         uiState.errorMessage?.let { error ->
-
             Snackbar(
                 modifier = Modifier.padding(16.dp),
+                containerColor = StreamSurface,
+                shape = RoundedCornerShape(8.dp),
                 action = {
                     TextButton(onClick = { viewModel.clearError() }) {
-                        Text("Dismiss")
+                        Text("OK", color = StreamRed)
                     }
                 }
-            ) {
-                Text(error)
-            }
+            ) { Text(error, color = Color.White) }
+        }
+
+        uiState.successMessage?.let { msg ->
+            Snackbar(
+                modifier = Modifier.padding(16.dp),
+                containerColor = Color(0xFF1B5E20),
+                shape = RoundedCornerShape(8.dp),
+                action = {
+                    TextButton(onClick = { viewModel.clearError() }) {
+                        Text("OK", color = Color.White)
+                    }
+                }
+            ) { Text(msg, color = Color.White) }
         }
     }
 }
@@ -285,7 +319,8 @@ private fun StreamingTopBar(
     onSearchChange: (String) -> Unit,
     onBack: () -> Unit,
     onAddUrl: () -> Unit,
-    onCreatePlaylist: () -> Unit
+    onCreatePlaylist: () -> Unit,
+    onHiddenVideos: () -> Unit = {}
 ) {
     TopAppBar(
         title = {
@@ -298,7 +333,7 @@ private fun StreamingTopBar(
                     TextField(
                         value = searchQuery,
                         onValueChange = onSearchChange,
-                        placeholder = { Text("Search videos…", color = Color.White.copy(0.4f)) },
+                        placeholder = { Text("Search videos...", color = Color.White.copy(0.4f)) },
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
@@ -310,14 +345,31 @@ private fun StreamingTopBar(
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {
-                    Text(
-                        "STREAM",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            color = Color.White,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 4.sp
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Netflix "N" style logo
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(StreamRed, RoundedCornerShape(4.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "S",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 18.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            "STREAM",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 4.sp
+                            )
                         )
-                    )
+                    }
                 }
             }
         },
@@ -336,6 +388,9 @@ private fun StreamingTopBar(
             }
             IconButton(onClick = onAddUrl) {
                 Icon(Icons.Default.AddLink, contentDescription = "Add URL", tint = Color.White)
+            }
+            IconButton(onClick = onHiddenVideos) {
+                Icon(Icons.Default.Lock, contentDescription = "Hidden Videos", tint = Color.White)
             }
             IconButton(onClick = {}) {
                 Icon(Icons.Default.AccountCircle, contentDescription = "Profile", tint = Color.White)
@@ -388,12 +443,14 @@ private fun StreamingCategoryTabs(
     }
 }
 
-// ─── Hero Banner ──────────────────────────────────────────────────────────────
+// ─── Hero Banner with Pager ──────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StreamingHeroBanner(
+private fun NetflixHeroBanner(
     videos: List<VideoSource>,
-    onPlayClick: (VideoSource) -> Unit
+    onPlayClick: (VideoSource) -> Unit,
+    onMyListClick: (VideoSource) -> Unit
 ) {
     if (videos.isEmpty()) {
         Box(
@@ -408,36 +465,57 @@ private fun StreamingHeroBanner(
         return
     }
 
-    val featured = videos.first()
+    val pagerState = rememberPagerState(pageCount = { videos.size })
+
+    // Auto-scroll
+    LaunchedEffect(pagerState) {
+        while (true) {
+            delay(5000)
+            val next = (pagerState.currentPage + 1) % videos.size
+            pagerState.animateScrollToPage(next)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(300.dp)
+            .height(340.dp)
     ) {
-        AsyncImage(
-            model = featured.thumbnailUri ?: featured.uri,
-            contentDescription = featured.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color(0xEE000000))
-                    )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val video = videos[page]
+            Box(modifier = Modifier.fillMaxSize()) {
+                AsyncImage(
+                    model = video.thumbnailUri ?: video.uri,
+                    contentDescription = video.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
-        )
 
+                // Gradient overlays
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(StreamBg.copy(0.3f), Color.Transparent, StreamBg)
+                            )
+                        )
+                )
+            }
+        }
+
+        // Content overlay
+        val currentVideo = videos.getOrNull(pagerState.currentPage) ?: videos.first()
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(20.dp)
         ) {
             Text(
-                text = featured.title,
+                text = currentVideo.title,
                 style = MaterialTheme.typography.headlineSmall.copy(
                     color = Color.White,
                     fontWeight = FontWeight.Bold
@@ -445,35 +523,61 @@ private fun StreamingHeroBanner(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+
+            if (currentVideo.durationMs > 0) {
+                Text(
+                    formatDuration(currentVideo.durationMs),
+                    color = Color.White.copy(0.6f),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Play button
                 Button(
-                    onClick = { onPlayClick(featured) },
+                    onClick = { onPlayClick(currentVideo) },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
                 ) {
-                    Icon(Icons.Default.PlayArrow, null, tint = Color.Black)
+                    Icon(Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Play", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
+
+                // My List button
                 OutlinedButton(
-                    onClick = {},
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.5f))
+                    onClick = { onMyListClick(currentVideo) },
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.5f)),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    Icon(Icons.Default.Add, null, tint = Color.White)
+                    Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("My List", color = Color.White)
                 }
-                OutlinedButton(
-                    onClick = {},
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.5f))
-                ) {
-                    Icon(Icons.Default.Info, null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Info", color = Color.White)
-                }
+            }
+        }
+
+        // Page indicator dots
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            repeat(videos.size) { index ->
+                Box(
+                    modifier = Modifier
+                        .size(if (index == pagerState.currentPage) 8.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (index == pagerState.currentPage) StreamRed
+                            else Color.White.copy(0.4f)
+                        )
+                )
             }
         }
     }
@@ -506,6 +610,60 @@ private fun ContentSection(
     }
 }
 
+// ─── Top 10 Card ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun Top10Card(
+    rank: Int,
+    source: VideoSource,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .width(160.dp)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        // Large rank number
+        Text(
+            text = "$rank",
+            style = MaterialTheme.typography.displayLarge.copy(
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 72.sp,
+                fontStyle = FontStyle.Italic
+            ),
+            modifier = Modifier.offset(x = 8.dp, y = 8.dp)
+        )
+
+        // Thumbnail
+        Box(
+            modifier = Modifier
+                .width(100.dp)
+                .height(140.dp)
+                .offset(x = (-12).dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(StreamSurface)
+        ) {
+            AsyncImage(
+                model = source.thumbnailUri ?: source.uri,
+                contentDescription = source.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+
+            // Netflix red top border
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .align(Alignment.TopCenter)
+                    .background(StreamRed)
+            )
+        }
+    }
+}
+
 // ─── Video Card ───────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -513,7 +671,8 @@ private fun ContentSection(
 private fun VideoCard(
     source: VideoSource,
     onClick: () -> Unit,
-    onAddToPlaylist: () -> Unit
+    onAddToPlaylist: () -> Unit,
+    onHide: () -> Unit = {}
 ) {
 
     var showMenu by remember { mutableStateOf(false) }
@@ -531,7 +690,7 @@ private fun VideoCard(
             modifier = Modifier
                 .width(160.dp)
                 .height(90.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(StreamSurface),
             contentAlignment = Alignment.Center
         ) {
@@ -543,19 +702,47 @@ private fun VideoCard(
                 contentScale = ContentScale.Crop
             )
 
-            Icon(
-                Icons.Default.PlayCircleOutline,
-                null,
-                tint = Color.White,
-                modifier = Modifier.size(36.dp)
-            )
+            // Play icon
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // Duration badge
+            if (source.durationMs > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(0.75f), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        formatDuration(source.durationMs),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = source.title,
             color = Color.White,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -564,15 +751,20 @@ private fun VideoCard(
             expanded = showMenu,
             onDismissRequest = { showMenu = false }
         ) {
-
             DropdownMenuItem(
                 text = { Text("Play") },
+                leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
                 onClick = { showMenu = false; onClick() }
             )
-
             DropdownMenuItem(
-                text = { Text("Add to Playlist") },
+                text = { Text("Add to My List") },
+                leadingIcon = { Icon(Icons.Default.PlaylistAdd, null) },
                 onClick = { showMenu = false; onAddToPlaylist() }
+            )
+            DropdownMenuItem(
+                text = { Text("Hide Video") },
+                leadingIcon = { Icon(Icons.Default.VisibilityOff, null) },
+                onClick = { showMenu = false; onHide() }
             )
         }
     }
@@ -591,7 +783,7 @@ private fun ContinueWatchingCard(history: WatchHistoryEntity, onClick: () -> Uni
             modifier = Modifier
                 .width(200.dp)
                 .height(112.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(6.dp))
                 .background(StreamSurface)
         ) {
             AsyncImage(
@@ -600,13 +792,26 @@ private fun ContinueWatchingCard(history: WatchHistoryEntity, onClick: () -> Uni
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
-            // Progress bar
+
+            // Play icon center
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(24.dp))
+            }
+
+            // Progress bar at bottom
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .height(3.dp)
-                    .background(Color.White.copy(0.25f))
+                    .background(Color.White.copy(0.2f))
             ) {
                 Box(
                     modifier = Modifier
@@ -616,10 +821,13 @@ private fun ContinueWatchingCard(history: WatchHistoryEntity, onClick: () -> Uni
                 )
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             history.title,
-            style = MaterialTheme.typography.labelMedium.copy(color = Color.White),
+            style = MaterialTheme.typography.labelMedium.copy(
+                color = Color.White,
+                fontWeight = FontWeight.Medium
+            ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -639,13 +847,27 @@ private fun PlaylistCard(name: String, thumbnailUri: String?, onClick: () -> Uni
             modifier = Modifier
                 .width(140.dp)
                 .height(100.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF2A2A2A)),
+                .clip(RoundedCornerShape(6.dp))
+                .background(StreamSurface),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.PlaylistPlay, null, tint = Color.White.copy(0.4f), modifier = Modifier.size(40.dp))
+            if (thumbnailUri != null) {
+                AsyncImage(
+                    model = thumbnailUri,
+                    contentDescription = name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Icon(Icons.Default.PlaylistPlay, null, tint = Color.White.copy(0.5f), modifier = Modifier.size(40.dp))
         }
-        Text(name, style = MaterialTheme.typography.labelMedium.copy(color = Color.White), maxLines = 1)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.labelMedium.copy(color = Color.White, fontWeight = FontWeight.Medium),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -690,62 +912,92 @@ private fun StreamingEmptyState(onAddUrl: () -> Unit) {
 @Composable
 private fun StreamUrlDialog(
     urlInput: String,
+    isDownloading: Boolean = false,
     onUrlChange: (String) -> Unit,
     onPlay: (String) -> Unit,
     onDownload: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-
     AlertDialog(
-
         onDismissRequest = onDismiss,
-
+        containerColor = StreamSurface,
+        shape = RoundedCornerShape(12.dp),
         title = {
-            Text("Stream from URL")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AddLink, null, tint = StreamRed)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Stream from URL", color = Color.White, fontWeight = FontWeight.Bold)
+            }
         },
-
         text = {
-
             Column {
-
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = onUrlChange,
-                    placeholder = { Text("https://...") },
-                    modifier = Modifier.fillMaxWidth()
+                    placeholder = { Text("https://...", color = Color.White.copy(0.3f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = StreamRed,
+                        unfocusedBorderColor = Color.White.copy(0.3f),
+                        cursorColor = StreamRed
+                    ),
+                    singleLine = true
                 )
+                if (isDownloading) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = StreamRed,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Downloading...", color = Color.White.copy(0.6f), fontSize = 12.sp)
+                    }
+                }
             }
         },
-
         confirmButton = {
-
             Row {
-
                 Button(
                     onClick = { onPlay(urlInput) },
-                    enabled = urlInput.isNotBlank()
+                    enabled = urlInput.isNotBlank() && !isDownloading,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(6.dp)
                 ) {
-                    Text("Play")
+                    Icon(Icons.Default.PlayArrow, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Play", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
-
                 Spacer(Modifier.width(8.dp))
-
                 OutlinedButton(
                     onClick = { onDownload(urlInput) },
-                    enabled = urlInput.isNotBlank()
+                    enabled = urlInput.isNotBlank() && !isDownloading,
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(0.3f))
                 ) {
-                    Icon(Icons.Default.Download, null)
+                    Icon(Icons.Default.Download, null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Download")
+                    Text("Save", color = Color.White)
                 }
             }
         },
-
         dismissButton = {
-
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancel", color = Color.White.copy(0.6f))
             }
         }
     )
+}
+
+private fun formatDuration(ms: Long): String {
+    val seconds = (ms / 1000) % 60
+    val minutes = (ms / 1000 / 60) % 60
+    val hours = ms / 1000 / 3600
+    return if (hours > 0)
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    else
+        "%d:%02d".format(minutes, seconds)
 }

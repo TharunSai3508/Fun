@@ -3,6 +3,7 @@ package com.unistream.webnovel.ui
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,6 +21,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.unistream.webnovel.data.*
 import com.unistream.webnovel.viewmodel.NovelViewModel
 
+private val WebnovelBlue = Color(0xFF1565C0)
+
 @Composable
 fun NovelReaderScreen(
     novelId: Long,
@@ -36,7 +39,6 @@ fun NovelReaderScreen(
         viewModel.loadNovelForReading(novelId, chapterId)
     }
 
-    // Resolve background / text colors based on reader theme
     val (bgColor, textColor) = when (state.readerSettings.theme) {
         ReaderTheme.LIGHT -> ReaderLightColors
         ReaderTheme.SEPIA -> ReaderSepiaColors
@@ -51,6 +53,14 @@ fun NovelReaderScreen(
         else -> FontFamily.Default
     }
 
+    // Chapter progress
+    val chapterProgress = remember(state.currentChapter, state.chapters) {
+        val currentIndex = state.chapters.indexOfFirst { it.id == state.currentChapter?.id }
+        if (state.chapters.isNotEmpty() && currentIndex >= 0)
+            (currentIndex + 1).toFloat() / state.chapters.size.toFloat()
+        else 0f
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -60,6 +70,19 @@ fun NovelReaderScreen(
                 indication = null
             ) { showUi = !showUi }
     ) {
+        // Chapter progress bar at very top
+        if (chapterProgress > 0f) {
+            LinearProgressIndicator(
+                progress = { chapterProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .align(Alignment.TopCenter),
+                color = WebnovelBlue,
+                trackColor = textColor.copy(0.1f)
+            )
+        }
+
         when {
             state.isLoading || state.isDownloadingChapter -> {
                 Column(
@@ -78,6 +101,7 @@ fun NovelReaderScreen(
             state.currentChapter != null -> {
                 val chapter = state.currentChapter!!
                 val scrollState = rememberScrollState()
+                val currentIndex = state.chapters.indexOfFirst { it.id == chapter.id }
 
                 Column(
                     modifier = Modifier
@@ -96,10 +120,24 @@ fun NovelReaderScreen(
                             color = textColor,
                             lineHeight = (state.readerSettings.fontSize * state.readerSettings.lineSpacing + 4).sp
                         ),
-                        modifier = Modifier.padding(bottom = 24.dp)
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
 
-                    // Chapter content – split into paragraphs
+                    // Word count and reading time
+                    if (chapter.wordCount > 0) {
+                        val readingMinutes = (chapter.wordCount / 250).coerceAtLeast(1)
+                        Text(
+                            "${chapter.wordCount} words  ~${readingMinutes} min read",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = textColor.copy(0.4f)
+                            ),
+                            modifier = Modifier.padding(bottom = 20.dp)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    // Chapter content
                     val paragraphs = chapter.content
                         .split("\n")
                         .filter { it.isNotBlank() }
@@ -118,31 +156,58 @@ fun NovelReaderScreen(
                         )
                     }
 
-                    // Navigation at bottom
+                    // Navigation at bottom (Webnovel pill-style buttons)
                     Spacer(modifier = Modifier.height(32.dp))
+
+                    // Chapter counter
+                    Text(
+                        "Chapter ${chapter.chapterNumber.toInt()} of ${state.chapters.size}",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            color = textColor.copy(0.4f)
+                        ),
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        val currentIndex = state.chapters.indexOfFirst { it.id == chapter.id }
+                        // Previous chapter button
                         OutlinedButton(
                             onClick = viewModel::navigateToPreviousChapter,
-                            enabled = currentIndex > 0
+                            enabled = currentIndex > 0,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (currentIndex > 0) textColor.copy(0.3f) else textColor.copy(0.1f)
+                            )
                         ) {
-                            Icon(Icons.Default.ChevronLeft, null)
-                            Text("Prev")
+                            Icon(Icons.Default.ChevronLeft, null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Previous")
                         }
-                        Text(
-                            "Ch. ${chapter.chapterNumber.toInt()} / ${state.chapters.size}",
-                            style = MaterialTheme.typography.labelMedium.copy(color = textColor.copy(0.5f)),
-                            modifier = Modifier.align(Alignment.CenterVertically)
-                        )
+
+                        // Next chapter button
                         Button(
                             onClick = viewModel::navigateToNextChapter,
-                            enabled = currentIndex < state.chapters.size - 1
+                            enabled = currentIndex < state.chapters.size - 1,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = WebnovelBlue,
+                                disabledContainerColor = WebnovelBlue.copy(0.3f)
+                            )
                         ) {
-                            Text("Next")
-                            Icon(Icons.Default.ChevronRight, null)
+                            Text("Next Chapter", fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -252,7 +317,11 @@ private fun ReaderSettingsSheet(
                     FilterChip(
                         selected = settings.theme == theme,
                         onClick = { onSettingsChanged(settings.copy(theme = theme)) },
-                        label = { Text(theme.label) }
+                        label = { Text(theme.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = WebnovelBlue,
+                            selectedLabelColor = Color.White
+                        )
                     )
                 }
             }
@@ -265,7 +334,8 @@ private fun ReaderSettingsSheet(
                 value = settings.fontSize,
                 onValueChange = { onSettingsChanged(settings.copy(fontSize = it)) },
                 valueRange = 12f..28f,
-                steps = 7
+                steps = 7,
+                colors = SliderDefaults.colors(thumbColor = WebnovelBlue, activeTrackColor = WebnovelBlue)
             )
 
             // Line spacing
@@ -274,7 +344,8 @@ private fun ReaderSettingsSheet(
                 value = settings.lineSpacing,
                 onValueChange = { onSettingsChanged(settings.copy(lineSpacing = it)) },
                 valueRange = 1.2f..2.5f,
-                steps = 12
+                steps = 12,
+                colors = SliderDefaults.colors(thumbColor = WebnovelBlue, activeTrackColor = WebnovelBlue)
             )
 
             // Font family
@@ -285,7 +356,11 @@ private fun ReaderSettingsSheet(
                     FilterChip(
                         selected = settings.fontFamily == font,
                         onClick = { onSettingsChanged(settings.copy(fontFamily = font)) },
-                        label = { Text(font.label) }
+                        label = { Text(font.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = WebnovelBlue,
+                            selectedLabelColor = Color.White
+                        )
                     )
                 }
             }
@@ -298,14 +373,18 @@ private fun ReaderSettingsSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChapterListSheet(
-    chapters: List<com.unistream.webnovel.data.ChapterEntity>,
+    chapters: List<ChapterEntity>,
     currentChapterId: Long?,
-    onChapterSelected: (com.unistream.webnovel.data.ChapterEntity) -> Unit,
+    onChapterSelected: (ChapterEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Chapters (${chapters.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Chapters (${chapters.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
             Spacer(modifier = Modifier.height(8.dp))
             androidx.compose.foundation.lazy.LazyColumn(
                 modifier = Modifier.heightIn(max = 400.dp)
@@ -317,13 +396,14 @@ private fun ChapterListSheet(
                             Text(
                                 chapter.title,
                                 fontWeight = if (chapter.id == currentChapterId) FontWeight.Bold else FontWeight.Normal,
-                                color = if (chapter.id == currentChapterId) MaterialTheme.colorScheme.primary
+                                color = if (chapter.id == currentChapterId) WebnovelBlue
                                 else MaterialTheme.colorScheme.onSurface
                             )
                         },
                         supportingContent = {
+                            val readingMins = if (chapter.wordCount > 0) " ~${(chapter.wordCount / 250).coerceAtLeast(1)} min" else ""
                             Text(
-                                "${chapter.wordCount} words",
+                                "${chapter.wordCount} words$readingMins",
                                 style = MaterialTheme.typography.labelSmall
                             )
                         },
@@ -340,4 +420,3 @@ private fun ChapterListSheet(
         }
     }
 }
-

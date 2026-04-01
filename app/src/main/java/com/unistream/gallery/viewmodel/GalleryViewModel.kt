@@ -19,7 +19,9 @@ data class GalleryUiState(
     val searchQuery: String = "",
     val isLoading: Boolean = false,
     val isSelectionMode: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isImporting: Boolean = false,
+    val importSuccess: Boolean = false
 )
 
 @HiltViewModel
@@ -128,27 +130,67 @@ class GalleryViewModel @Inject constructor(
             val toHide = _uiState.value.selectedMedia.mapNotNull { id ->
                 _uiState.value.allMedia.find { it.id == id }
             }
-            // In production: copy file to encrypted storage, then delete from MediaStore
             toHide.forEach { media ->
-                val hiddenPath = "hidden/${media.displayName}"
-                repository.hideMedia(media, hiddenPath)
+                try {
+                    repository.hideMedia(media, "")
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(errorMessage = "Failed to hide: ${e.message}") }
+                }
             }
             clearSelection()
             loadMedia()
         }
     }
 
+    fun unhideMedia(entity: HiddenMediaEntity) {
+        viewModelScope.launch {
+            try {
+                val success = repository.unhideMedia(entity)
+                if (success) {
+                    loadMedia()
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Failed to restore media") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Error: ${e.message}") }
+            }
+        }
+    }
+
+    fun deleteHiddenMedia(entity: HiddenMediaEntity) {
+        viewModelScope.launch {
+            try {
+                repository.deleteHiddenMediaPermanently(entity)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Error: ${e.message}") }
+            }
+        }
+    }
+
     fun importFromUrl(url: String) = viewModelScope.launch {
-        repository.importImageFromUrl(url)
-        loadMedia()
+        _uiState.update { it.copy(isImporting = true, errorMessage = null, importSuccess = false) }
+        try {
+            repository.importImageFromUrl(url)
+            _uiState.update { it.copy(isImporting = false, importSuccess = true) }
+            loadMedia()
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(isImporting = false, errorMessage = "Import failed: ${e.message}")
+            }
+        }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun clearImportSuccess() {
+        _uiState.update { it.copy(importSuccess = false) }
     }
 
     fun selectAll() {
-
         _uiState.update { state ->
-
             val allIds = state.filteredMedia.map { media -> media.id }.toSet()
-
             state.copy(
                 selectedMedia = allIds,
                 isSelectionMode = true

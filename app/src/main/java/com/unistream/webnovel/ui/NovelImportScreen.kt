@@ -109,7 +109,8 @@ fun NovelImportScreen(
                         .fillMaxWidth()
                         .height(56.dp),
                     enabled = urlInput.isNotBlank() && importState !is ImportState.Loading,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
                 ) {
                     if (importState is ImportState.Loading) {
                         CircularProgressIndicator(

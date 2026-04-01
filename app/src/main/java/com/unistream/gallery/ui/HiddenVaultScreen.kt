@@ -2,6 +2,7 @@ package com.unistream.gallery.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -10,21 +11,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.unistream.gallery.data.HiddenMediaEntity
 import com.unistream.gallery.viewmodel.GalleryViewModel
 import com.unistream.gallery.viewmodel.VaultAccessViewModel
 import java.io.File
@@ -52,7 +57,8 @@ fun HiddenVaultScreen(
 
     VaultContentScreen(
         hiddenMedia = hiddenMedia,
-        onNavigateToMedia = onNavigateToMedia,
+        onUnhide = { entity -> viewModel.unhideMedia(entity) },
+        onDelete = { entity -> viewModel.deleteHiddenMedia(entity) },
         onBack = onBack
     )
 }
@@ -90,11 +96,7 @@ private fun VaultPinSetupScreen(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
 
-            // Top Bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
@@ -102,7 +104,6 @@ private fun VaultPinSetupScreen(
                         tint = Color.White
                     )
                 }
-
                 Text(
                     text = "Vault Setup",
                     color = Color.White,
@@ -111,20 +112,17 @@ private fun VaultPinSetupScreen(
                 )
             }
 
-            // Secure Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
                 elevation = CardDefaults.cardElevation(8.dp)
             ) {
-
                 Column(
                     modifier = Modifier
                         .padding(28.dp)
                         .fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-
                     Icon(
                         Icons.Default.Lock,
                         contentDescription = null,
@@ -147,9 +145,7 @@ private fun VaultPinSetupScreen(
                         onValueChange = { pin = it.filter(Char::isDigit).take(6) },
                         label = { Text("Enter PIN") },
                         visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.NumberPassword
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -160,28 +156,19 @@ private fun VaultPinSetupScreen(
                         onValueChange = { confirm = it.filter(Char::isDigit).take(6) },
                         label = { Text("Confirm PIN") },
                         visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.NumberPassword
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     if (!error.isNullOrBlank()) {
-
                         Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            error!!,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Text(error!!, color = MaterialTheme.colorScheme.error)
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Button(
-                        onClick = {
-                            vaultAccessViewModel.setupVaultPin(pin, confirm)
-                        },
+                        onClick = { vaultAccessViewModel.setupVaultPin(pin, confirm) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
@@ -193,28 +180,21 @@ private fun VaultPinSetupScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (vaultAccessViewModel.biometricAvailable) {
-
                         OutlinedButton(
-                            onClick = {
-                                vaultAccessViewModel.authenticateWithBiometric(context)
-                            },
+                            onClick = { vaultAccessViewModel.authenticateWithBiometric(context) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp),
                             shape = RoundedCornerShape(14.dp)
                         ) {
-
                             Icon(Icons.Default.Fingerprint, null)
-
                             Spacer(modifier = Modifier.width(8.dp))
-
                             Text("Enable Fingerprint Unlock")
                         }
                     }
                 }
             }
 
-            // Security note
             Text(
                 text = "Your vault is protected using secure local encryption.",
                 color = Color.White.copy(alpha = 0.7f),
@@ -257,20 +237,14 @@ private fun VaultUnlockScreen(
                 modifier = Modifier.size(56.dp)
             )
 
-            Text(
-                "Unlock Hidden Vault",
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Unlock Hidden Vault", color = Color.White, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
                 value = pin,
                 onValueChange = { pin = it.filter(Char::isDigit).take(6) },
                 label = { Text("Vault PIN") },
                 visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.NumberPassword
-                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -286,20 +260,13 @@ private fun VaultUnlockScreen(
             }
 
             if (vaultAccessViewModel.biometricAvailable) {
-
                 Button(
-                    onClick = {
-                        vaultAccessViewModel.authenticateWithBiometric(context)
-                    },
+                    onClick = { vaultAccessViewModel.authenticateWithBiometric(context) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-
                     Row(verticalAlignment = Alignment.CenterVertically) {
-
                         Icon(Icons.Default.Fingerprint, null)
-
                         Spacer(modifier = Modifier.width(8.dp))
-
                         Text("Unlock with Fingerprint")
                     }
                 }
@@ -315,25 +282,41 @@ private fun VaultUnlockScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VaultContentScreen(
-    hiddenMedia: List<com.unistream.gallery.data.HiddenMediaEntity>,
-    onNavigateToMedia: (Long) -> Unit,
+    hiddenMedia: List<HiddenMediaEntity>,
+    onUnhide: (HiddenMediaEntity) -> Unit,
+    onDelete: (HiddenMediaEntity) -> Unit,
     onBack: () -> Unit
 ) {
+
+    var selectedItem by remember { mutableStateOf<HiddenMediaEntity?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Hidden Vault", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                title = {
+                    Column {
+                        Text("Hidden Vault", fontWeight = FontWeight.Bold)
+                        Text(
+                            "${hiddenMedia.size} items",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF1A1A1A),
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
             )
-        }
+        },
+        containerColor = Color(0xFF121212)
     ) { padding ->
 
         if (hiddenMedia.isEmpty()) {
@@ -344,36 +327,216 @@ private fun VaultContentScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Vault is empty")
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = Color.White.copy(alpha = 0.3f)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Vault is empty",
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Hidden media will appear here",
+                        color = Color.White.copy(alpha = 0.4f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
 
         } else {
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
-                modifier = Modifier.padding(padding)
+                modifier = Modifier
+                    .padding(padding)
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
 
-                items(hiddenMedia) { media ->
+                items(hiddenMedia, key = { it.id }) { media ->
 
-                    Card(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .size(120.dp)
-                            .clickable {
-                                onNavigateToMedia(media.id)
-                            },
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-
-                        AsyncImage(
-                            model = File(media.hiddenPath),
-                            contentDescription = media.fileName,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    VaultMediaCard(
+                        media = media,
+                        onClick = { selectedItem = media },
+                        onLongClick = { selectedItem = media }
+                    )
                 }
             }
         }
+    }
+
+    // Bottom sheet for selected item actions
+    if (selectedItem != null) {
+        AlertDialog(
+            onDismissRequest = { selectedItem = null },
+            title = {
+                Text(
+                    selectedItem!!.fileName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        "Type: ${selectedItem!!.mediaType.uppercase()}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        "Size: ${formatFileSize(selectedItem!!.fileSizeBytes)}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedItem?.let { onUnhide(it) }
+                        selectedItem = null
+                    }
+                ) {
+                    Icon(Icons.Default.Visibility, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Unhide")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { selectedItem = null }) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            showDeleteConfirm = true
+                        },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Delete")
+                    }
+                }
+            }
+        )
+    }
+
+    // Delete confirmation
+    if (showDeleteConfirm && selectedItem != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete permanently?") },
+            text = { Text("This cannot be undone. The file will be permanently deleted.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedItem?.let { onDelete(it) }
+                        showDeleteConfirm = false
+                        selectedItem = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun VaultMediaCard(
+    media: HiddenMediaEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+
+    val thumbnailFile = media.thumbnailPath?.let { File(it) }
+    val displayFile = if (thumbnailFile?.exists() == true) thumbnailFile else File(media.hiddenPath)
+
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+    ) {
+        AsyncImage(
+            model = displayFile,
+            contentDescription = media.fileName,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        // Media type badge
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .background(
+                    Color.Black.copy(alpha = 0.6f),
+                    RoundedCornerShape(4.dp)
+                )
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+        ) {
+            val icon = when (media.mediaType) {
+                "video" -> Icons.Default.Videocam
+                "gif" -> Icons.Default.Gif
+                else -> Icons.Default.Image
+            }
+            Icon(
+                icon,
+                contentDescription = media.mediaType,
+                tint = Color.White,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+
+        // Bottom gradient with filename
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                    )
+                )
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = media.fileName,
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
+        bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
+        bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
+        else -> "$bytes B"
     }
 }

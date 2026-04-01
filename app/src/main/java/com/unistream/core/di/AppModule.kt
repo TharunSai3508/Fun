@@ -68,6 +68,9 @@ object AppModule {
     @Provides
     fun provideWatchHistoryDao(db: AppDatabase) = db.watchHistoryDao()
 
+    @Provides
+    fun provideHiddenVideoDao(db: AppDatabase) = db.hiddenVideoDao()
+
     // WebNovel DAOs
     @Provides
     fun provideNovelDao(db: AppDatabase) = db.novelDao()

@@ -4,23 +4,50 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.ThumbnailUtils
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
-import com.unistream.core.network.UrlDownloader
+import android.util.Size
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class GalleryRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val hiddenMediaDao: HiddenMediaDao
+    private val hiddenMediaDao: HiddenMediaDao,
+    private val okHttpClient: OkHttpClient
 ) {
 
     private val contentResolver: ContentResolver = context.contentResolver
+
+    private val vaultDir: File
+        get() {
+            val dir = File(context.filesDir, "hidden_vault")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
+
+    private val thumbnailDir: File
+        get() {
+            val dir = File(context.filesDir, "hidden_thumbs")
+            if (!dir.exists()) dir.mkdirs()
+            return dir
+        }
+
+    // ---------------------------------------------------------
+    // MEDIA QUERIES
+    // ---------------------------------------------------------
 
     suspend fun getAllMedia(
         filter: MediaFilter = MediaFilter.ALL,
@@ -195,7 +222,6 @@ class GalleryRepository @Inject constructor(
     suspend fun getAlbums(): List<Album> = withContext(Dispatchers.IO) {
 
         val albumMap = mutableMapOf<Long, Album>()
-
         val allMedia = getAllMedia()
 
         allMedia.forEach { media ->
@@ -219,77 +245,237 @@ class GalleryRepository @Inject constructor(
         albumMap.values.sortedByDescending { it.mediaCount }
     }
 
+    // ---------------------------------------------------------
+    // HIDDEN VAULT — FILE OPERATIONS
+    // ---------------------------------------------------------
+
     fun getHiddenMedia(): Flow<List<HiddenMediaEntity>> =
         hiddenMediaDao.getAllHiddenMedia()
 
-    suspend fun hideMedia(media: MediaItem, hiddenPath: String): Long {
-        return hiddenMediaDao.insertHiddenMedia(
-            HiddenMediaEntity(
-                originalUri = media.uri.toString(),
-                hiddenPath = hiddenPath,
-                mediaType = if (media.isVideo) "video" else if (media.isGif) "gif" else "image",
-                mimeType = media.mimeType,
-                fileName = media.displayName,
-                fileSizeBytes = media.size
+    suspend fun hideMedia(media: MediaItem, hiddenPath: String): Long =
+        withContext(Dispatchers.IO) {
+            val uuid = UUID.randomUUID().toString().take(8)
+            val safeFileName = "${uuid}_${media.displayName}"
+            val destFile = File(vaultDir, safeFileName)
+
+            // Copy file from MediaStore to vault directory
+            try {
+                contentResolver.openInputStream(media.uri)?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: throw Exception("Cannot open media file")
+            } catch (e: Exception) {
+                if (destFile.exists()) destFile.delete()
+                throw e
+            }
+
+            // Generate thumbnail
+            val thumbFile = File(thumbnailDir, "thumb_$safeFileName.jpg")
+            try {
+                if (media.isImage || media.isGif) {
+                    val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        contentResolver.loadThumbnail(media.uri, Size(300, 300), null)
+                    } else {
+                        MediaStore.Images.Thumbnails.getThumbnail(
+                            contentResolver, media.id,
+                            MediaStore.Images.Thumbnails.MINI_KIND, null
+                        )
+                    }
+                    bitmap?.let {
+                        FileOutputStream(thumbFile).use { out ->
+                            it.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                        }
+                        it.recycle()
+                    }
+                } else if (media.isVideo) {
+                    val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        contentResolver.loadThumbnail(media.uri, Size(300, 300), null)
+                    } else {
+                        ThumbnailUtils.createVideoThumbnail(
+                            destFile.absolutePath,
+                            MediaStore.Video.Thumbnails.MINI_KIND
+                        )
+                    }
+                    bitmap?.let {
+                        FileOutputStream(thumbFile).use { out ->
+                            it.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                        }
+                        it.recycle()
+                    }
+                }
+            } catch (_: Exception) {
+                // Thumbnail generation is best-effort
+            }
+
+            // Delete original from MediaStore
+            try {
+                contentResolver.delete(media.uri, null, null)
+            } catch (_: Exception) {
+                // On API 30+ may need user permission via createDeleteRequest
+                // For now we keep the original if deletion fails
+            }
+
+            // Save to database
+            hiddenMediaDao.insertHiddenMedia(
+                HiddenMediaEntity(
+                    originalUri = media.uri.toString(),
+                    hiddenPath = destFile.absolutePath,
+                    mediaType = when {
+                        media.isVideo -> "video"
+                        media.isGif -> "gif"
+                        else -> "image"
+                    },
+                    mimeType = media.mimeType,
+                    fileName = media.displayName,
+                    fileSizeBytes = media.size,
+                    thumbnailPath = if (thumbFile.exists()) thumbFile.absolutePath else null
+                )
             )
-        )
-    }
+        }
 
-    suspend fun unhideMedia(entity: HiddenMediaEntity) {
-        hiddenMediaDao.deleteHiddenMedia(entity)
-    }
+    suspend fun unhideMedia(entity: HiddenMediaEntity): Boolean =
+        withContext(Dispatchers.IO) {
+            val hiddenFile = File(entity.hiddenPath)
+            if (!hiddenFile.exists()) {
+                hiddenMediaDao.deleteHiddenMedia(entity)
+                return@withContext false
+            }
 
-    /**
-     * Import image or GIF from URL into MediaStore
-     */
+            // Restore to MediaStore
+            val isVideo = entity.mediaType == "video"
+            val collection = if (isVideo)
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+            val relativePath = if (isVideo) "Movies/Unistream" else "Pictures/Unistream"
+
+            val values = ContentValues().apply {
+                if (isVideo) {
+                    put(MediaStore.Video.Media.DISPLAY_NAME, entity.fileName)
+                    put(MediaStore.Video.Media.MIME_TYPE, entity.mimeType)
+                    put(MediaStore.Video.Media.RELATIVE_PATH, relativePath)
+                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                } else {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, entity.fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, entity.mimeType)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+
+            val uri = contentResolver.insert(collection, values)
+                ?: return@withContext false
+
+            try {
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    hiddenFile.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                }
+
+                values.clear()
+                values.put(
+                    if (isVideo) MediaStore.Video.Media.IS_PENDING
+                    else MediaStore.Images.Media.IS_PENDING, 0
+                )
+                contentResolver.update(uri, values, null, null)
+            } catch (e: Exception) {
+                contentResolver.delete(uri, null, null)
+                return@withContext false
+            }
+
+            // Clean up vault files
+            hiddenFile.delete()
+            entity.thumbnailPath?.let { File(it).delete() }
+
+            // Remove from DB
+            hiddenMediaDao.deleteHiddenMedia(entity)
+
+            true
+        }
+
+    suspend fun deleteHiddenMediaPermanently(entity: HiddenMediaEntity) =
+        withContext(Dispatchers.IO) {
+            File(entity.hiddenPath).delete()
+            entity.thumbnailPath?.let { File(it).delete() }
+            hiddenMediaDao.deleteHiddenMedia(entity)
+        }
+
+    // ---------------------------------------------------------
+    // IMPORT FROM URL
+    // ---------------------------------------------------------
+
     suspend fun importImageFromUrl(url: String): Uri = withContext(Dispatchers.IO) {
 
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "Mozilla/5.0")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .header("Referer", url)
             .build()
 
-        val client = okhttp3.OkHttpClient()
-
-        val response = client.newCall(request).execute()
+        val response = okHttpClient.newCall(request).execute()
 
         if (!response.isSuccessful) {
-            throw Exception("Failed to download image")
+            throw Exception("Failed to download: HTTP ${response.code}")
         }
 
         val body = response.body ?: throw Exception("Empty response")
 
-        val mime = body.contentType()?.toString() ?: "image/jpeg"
+        val contentType = body.contentType()?.toString() ?: "image/jpeg"
+
+        // Determine if it's a video or image
+        val isVideo = contentType.startsWith("video/")
 
         val extension = when {
-            mime.contains("gif") -> "gif"
-            mime.contains("png") -> "png"
-            mime.contains("webp") -> "webp"
+            contentType.contains("gif") -> "gif"
+            contentType.contains("png") -> "png"
+            contentType.contains("webp") -> "webp"
+            contentType.contains("mp4") -> "mp4"
+            contentType.contains("webm") -> "webm"
+            contentType.contains("video") -> "mp4"
             else -> "jpg"
         }
 
-        val fileName = "IMG_${System.currentTimeMillis()}.$extension"
+        val timestamp = System.currentTimeMillis()
+        val prefix = if (isVideo) "VID" else "IMG"
+        val fileName = "${prefix}_${timestamp}.$extension"
+
+        val collection = if (isVideo)
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        else
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+        val relativePath = if (isVideo) "Movies/Unistream" else "Pictures/Unistream"
+        val mimeType = if (isVideo) "video/$extension" else contentType
 
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Images.Media.MIME_TYPE, mime)
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Unistream")
-            put(MediaStore.Images.Media.IS_PENDING, 1)
+            if (isVideo) {
+                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Video.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Video.Media.RELATIVE_PATH, relativePath)
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            } else {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
         }
 
-        val uri = contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            values
-        ) ?: throw Exception("MediaStore insert failed")
+        val uri = contentResolver.insert(collection, values)
+            ?: throw Exception("MediaStore insert failed")
 
         contentResolver.openOutputStream(uri)?.use { output ->
             body.byteStream().copyTo(output)
         }
 
         values.clear()
-        values.put(MediaStore.Images.Media.IS_PENDING, 0)
-
+        values.put(
+            if (isVideo) MediaStore.Video.Media.IS_PENDING
+            else MediaStore.Images.Media.IS_PENDING, 0
+        )
         contentResolver.update(uri, values, null, null)
 
         uri

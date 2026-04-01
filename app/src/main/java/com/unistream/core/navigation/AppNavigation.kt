@@ -57,6 +57,8 @@ sealed class Screen(val route: String) {
         fun createRoute(playlistId: Long) = "playlist/$playlistId"
     }
 
+    object HiddenVideos : Screen("hidden_videos")
+
     object NovelLibrary : Screen("novel_library")
 
     object NovelReader : Screen("novel_reader/{novelId}/{chapterId}") {
@@ -243,6 +245,9 @@ fun AppNavigation(
                     onNavigateToPlaylist = { id ->
                         navController.navigate(Screen.Playlist.createRoute(id))
                     },
+                    onNavigateToHiddenVideos = {
+                        navController.navigate(Screen.HiddenVideos.route)
+                    },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -266,6 +271,16 @@ fun AppNavigation(
 
                 PlaylistScreen(
                     playlistId = playlistId,
+                    onNavigateToPlayer = { type, id ->
+                        navController.navigate(Screen.Player.createRoute(type, id))
+                    },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.HiddenVideos.route) {
+
+                com.unistream.streaming.ui.HiddenVideosScreen(
                     onNavigateToPlayer = { type, id ->
                         navController.navigate(Screen.Player.createRoute(type, id))
                     },

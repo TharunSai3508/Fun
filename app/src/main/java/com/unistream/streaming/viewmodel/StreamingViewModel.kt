@@ -14,11 +14,14 @@ data class StreamingUiState(
     val playlists: List<PlaylistEntity> = emptyList(),
     val continueWatching: List<WatchHistoryEntity> = emptyList(),
     val watchHistory: List<WatchHistoryEntity> = emptyList(),
+    val hiddenVideos: List<HiddenVideoEntity> = emptyList(),
     val isLoading: Boolean = false,
     val isDownloading: Boolean = false,
+    val downloadProgress: Float = 0f,
     val showUrlDialog: Boolean = false,
     val urlInput: String = "",
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val successMessage: String? = null
 )
 
 @HiltViewModel
@@ -66,6 +69,12 @@ class StreamingViewModel @Inject constructor(
         viewModelScope.launch {
             repository.getWatchHistory().collect {
                 _uiState.update { s -> s.copy(watchHistory = it) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.getHiddenVideos().collect {
+                _uiState.update { s -> s.copy(hiddenVideos = it) }
             }
         }
     }
@@ -188,6 +197,51 @@ class StreamingViewModel @Inject constructor(
     // ---------------------------------------------------------
 
     fun clearError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        _uiState.update { it.copy(errorMessage = null, successMessage = null) }
+    }
+
+    // ---------------------------------------------------------
+    // HIDDEN VIDEOS
+    // ---------------------------------------------------------
+
+    fun hideVideo(source: VideoSource) {
+        viewModelScope.launch {
+            try {
+                repository.hideVideo(source)
+                _uiState.update { it.copy(successMessage = "Video hidden") }
+                // Reload local videos
+                val videos = repository.getLocalVideos()
+                _uiState.update { it.copy(localVideos = videos) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Failed to hide: ${e.message}") }
+            }
+        }
+    }
+
+    fun unhideVideo(entity: HiddenVideoEntity) {
+        viewModelScope.launch {
+            try {
+                val success = repository.unhideVideo(entity)
+                if (success) {
+                    _uiState.update { it.copy(successMessage = "Video restored") }
+                    val videos = repository.getLocalVideos()
+                    _uiState.update { it.copy(localVideos = videos) }
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Failed to restore video") }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Error: ${e.message}") }
+            }
+        }
+    }
+
+    fun deleteHiddenVideo(entity: HiddenVideoEntity) {
+        viewModelScope.launch {
+            try {
+                repository.deleteHiddenVideoPermanently(entity)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Error: ${e.message}") }
+            }
+        }
     }
 }

@@ -264,6 +264,46 @@ interface PlaylistDao {
 // ─────────────────────────────────────────────
 // Watch History DAO
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// Hidden Video Entity (Vault)
+// ─────────────────────────────────────────────
+@Entity(tableName = "hidden_videos")
+data class HiddenVideoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val originalUri: String,
+    val hiddenPath: String,
+    val mimeType: String,
+    val fileName: String,
+    val fileSizeBytes: Long,
+    val durationMs: Long = 0,
+    val dateHidden: Long = System.currentTimeMillis(),
+    val thumbnailPath: String? = null
+)
+
+// ─────────────────────────────────────────────
+// Hidden Video DAO
+// ─────────────────────────────────────────────
+@Dao
+interface HiddenVideoDao {
+    @Query("SELECT * FROM hidden_videos ORDER BY dateHidden DESC")
+    fun getAllHiddenVideos(): Flow<List<HiddenVideoEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHiddenVideo(video: HiddenVideoEntity): Long
+
+    @Delete
+    suspend fun deleteHiddenVideo(video: HiddenVideoEntity)
+
+    @Query("SELECT COUNT(*) FROM hidden_videos")
+    fun getHiddenVideoCount(): Flow<Int>
+
+    @Query("SELECT * FROM hidden_videos WHERE id = :id")
+    suspend fun getHiddenVideoById(id: Long): HiddenVideoEntity?
+}
+
+// ─────────────────────────────────────────────
+// Watch History DAO
+// ─────────────────────────────────────────────
 @Dao
 interface WatchHistoryDao {
 
