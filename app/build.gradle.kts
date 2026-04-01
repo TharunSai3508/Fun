@@ -120,6 +120,7 @@ dependencies {
     implementation(libs.media3.ui)
     implementation(libs.media3.session)
     implementation(libs.media3.cast)
+    implementation(libs.media3.datasource.okhttp)
 
     // Image Loading
     implementation(libs.coil.compose)
@@ -160,6 +161,9 @@ dependencies {
 
     // Google Sign-In
     implementation(libs.google.auth)
+    implementation(libs.googleid)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.androidx.credentials)
 
     // Testing
     testImplementation(libs.junit)

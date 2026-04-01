@@ -466,7 +466,11 @@ private fun VaultMediaCard(
 ) {
 
     val thumbnailFile = media.thumbnailPath?.let { File(it) }
-    val displayFile = if (thumbnailFile?.exists() == true) thumbnailFile else File(media.hiddenPath)
+    val displayModel: Any = when {
+        thumbnailFile?.exists() == true -> thumbnailFile
+        media.originalUri.isNotBlank() -> media.originalUri
+        else -> File(media.hiddenPath)
+    }
 
     Box(
         modifier = Modifier
@@ -478,7 +482,7 @@ private fun VaultMediaCard(
             )
     ) {
         AsyncImage(
-            model = displayFile,
+            model = displayModel,
             contentDescription = media.fileName,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop

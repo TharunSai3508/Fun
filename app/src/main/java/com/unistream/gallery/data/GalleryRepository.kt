@@ -64,14 +64,17 @@ class GalleryRepository @Inject constructor(
             mediaItems.addAll(queryVideos(filter))
         }
 
+        val hiddenUris = hiddenMediaDao.getAllHiddenMediaOnce().map { it.originalUri }.toSet()
+        val visibleMedia = mediaItems.filterNot { it.uri.toString() in hiddenUris }.toMutableList()
+
         when (sortOrder) {
-            SortOrder.DATE_DESC -> mediaItems.sortByDescending { it.dateAdded }
-            SortOrder.DATE_ASC -> mediaItems.sortBy { it.dateAdded }
-            SortOrder.NAME_ASC -> mediaItems.sortBy { it.displayName }
-            SortOrder.SIZE_DESC -> mediaItems.sortByDescending { it.size }
+            SortOrder.DATE_DESC -> visibleMedia.sortByDescending { it.dateAdded }
+            SortOrder.DATE_ASC -> visibleMedia.sortBy { it.dateAdded }
+            SortOrder.NAME_ASC -> visibleMedia.sortBy { it.displayName }
+            SortOrder.SIZE_DESC -> visibleMedia.sortByDescending { it.size }
         }
 
-        mediaItems
+        visibleMedia
     }
 
     private fun queryImages(filter: MediaFilter): List<MediaItem> {

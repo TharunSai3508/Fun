@@ -18,10 +18,11 @@ import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.unistream.core.ui.theme.*
 import com.unistream.webnovel.data.*
 import com.unistream.webnovel.viewmodel.NovelViewModel
 
-private val WebnovelBlue = Color(0xFF1565C0)
+private val WebnovelBlue = NovelPrimaryLight
 
 @Composable
 fun NovelReaderScreen(
@@ -96,6 +97,15 @@ fun NovelReaderScreen(
                         color = textColor.copy(0.5f),
                         style = MaterialTheme.typography.bodySmall
                     )
+                }
+            }
+            state.errorMessage != null -> {
+                Card(modifier = Modifier.align(Alignment.Center).padding(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(state.errorMessage ?: "Failed to load", color = MaterialTheme.colorScheme.onErrorContainer)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = { state.currentChapter?.id?.let(viewModel::loadChapter) ?: viewModel.loadNovelForReading(novelId, chapterId) }) { Text("Retry") }
+                    }
                 }
             }
             state.currentChapter != null -> {
@@ -288,10 +298,10 @@ fun NovelReaderScreen(
 }
 
 // ── Color schemes per reader theme ──────────────────────────────────────
-private val ReaderLightColors = Pair(Color(0xFFFFFFFF), Color(0xFF1A1A1A))
-private val ReaderSepiaColors = Pair(Color(0xFFF5DEB3), Color(0xFF5C4033))
-private val ReaderDarkColors = Pair(Color(0xFF121212), Color(0xFFE0E0E0))
-private val ReaderNightColors = Pair(Color(0xFF0A0A0A), Color(0xFFBBBBBB))
+private val ReaderLightColors = Pair(ReaderLightBg, ReaderLightText)
+private val ReaderSepiaColors = Pair(ReaderSepiaBg, ReaderSepiaText)
+private val ReaderDarkColors = Pair(ReaderDarkBg, ReaderDarkText)
+private val ReaderNightColors = Pair(ReaderNightBg, ReaderNightText)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

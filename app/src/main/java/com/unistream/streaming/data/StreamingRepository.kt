@@ -184,15 +184,14 @@ class StreamingRepository @Inject constructor(
     // ---------------------------------------------------------
 
     fun convertDriveUrl(shareUrl: String): String {
-
-        val fileIdRegex = Regex("/file/d/([a-zA-Z0-9_-]+)")
-
-        val match = fileIdRegex.find(shareUrl)
-
-        val fileId = match?.groupValues?.get(1)
+        val patterns = listOf(
+            Regex("/file/d/([a-zA-Z0-9_-]+)"),
+            Regex("[?&]id=([a-zA-Z0-9_-]+)"),
+            Regex("/d/([a-zA-Z0-9_-]+)")
+        )
+        val fileId = patterns.firstNotNullOfOrNull { it.find(shareUrl)?.groupValues?.getOrNull(1) }
             ?: return shareUrl
-
-        return "https://drive.google.com/uc?export=download&id=$fileId"
+        return "https://drive.google.com/uc?export=download&id=$fileId&confirm=t"
     }
 
     // ---------------------------------------------------------

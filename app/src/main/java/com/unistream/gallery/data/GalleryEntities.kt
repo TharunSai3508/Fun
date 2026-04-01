@@ -69,4 +69,7 @@ interface HiddenMediaDao {
 
     @Query("SELECT * FROM hidden_media WHERE id = :id")
     suspend fun getHiddenMediaById(id: Long): HiddenMediaEntity?
+
+    @Query("SELECT * FROM hidden_media")
+    suspend fun getAllHiddenMediaOnce(): List<HiddenMediaEntity>
 }

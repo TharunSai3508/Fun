@@ -24,6 +24,8 @@ import androidx.lifecycle.ViewModelProvider
 import com.unistream.core.navigation.AppNavigation
 import com.unistream.core.security.AppLockViewModel
 import com.unistream.core.ui.theme.UniStreamTheme
+import com.unistream.settings.theme.ThemeMode
+import com.unistream.settings.theme.ThemeViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -43,6 +45,13 @@ class MainActivity : FragmentActivity() {
         setContent {
 
             val isAppLocked by appLockViewModel.isLocked.collectAsState()
+            val themeViewModel: ThemeViewModel = hiltViewModel()
+            val themeMode by themeViewModel.themeMode.collectAsState()
+            val darkTheme = when (themeMode) {
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+                ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
 
             splashScreen.setKeepOnScreenCondition {
                 appLockViewModel.isInitializing.value
@@ -50,7 +59,7 @@ class MainActivity : FragmentActivity() {
 
             RequestMediaPermissionsOnFirstLaunch()
 
-            UniStreamTheme {
+            UniStreamTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()

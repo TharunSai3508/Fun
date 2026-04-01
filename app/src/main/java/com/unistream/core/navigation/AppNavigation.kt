@@ -8,6 +8,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
@@ -16,7 +19,10 @@ import androidx.navigation.compose.rememberNavController
 import com.unistream.core.security.AppLockScreen
 import com.unistream.gallery.ui.*
 import com.unistream.home.HomeScreen
-import com.unistream.home.LaunchIntroScreen
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.unistream.home.SplashAnimationScreen
+import com.unistream.home.SplashViewModel
+import com.unistream.settings.theme.ThemeViewModel
 import com.unistream.settings.ui.SettingsScreen
 import com.unistream.streaming.ui.*
 import com.unistream.webnovel.ui.*
@@ -122,19 +128,22 @@ fun AppNavigation(
         ) {
 
             composable(Screen.Intro.route) {
-
-                LaunchIntroScreen(
-                    onAnimationFinished = {
-
-                        val next =
-                            if (isAppLocked) Screen.AppLock.route
-                            else Screen.Home.route
-
-                        navController.navigate(next) {
-                            popUpTo(Screen.Intro.route) { inclusive = true }
-                        }
+                val splashViewModel: SplashViewModel = hiltViewModel()
+                val seen by splashViewModel.hasSeenSplash.collectAsState()
+                if (seen) {
+                    val next = if (isAppLocked) Screen.AppLock.route else Screen.Home.route
+                    LaunchedEffect(Unit) {
+                        navController.navigate(next) { popUpTo(Screen.Intro.route) { inclusive = true } }
                     }
-                )
+                } else {
+                    SplashAnimationScreen(
+                        onFinished = {
+                            splashViewModel.markSeen()
+                            val next = if (isAppLocked) Screen.AppLock.route else Screen.Home.route
+                            navController.navigate(next) { popUpTo(Screen.Intro.route) { inclusive = true } }
+                        }
+                    )
+                }
             }
 
             composable(Screen.AppLock.route) {
@@ -154,12 +163,15 @@ fun AppNavigation(
             }
 
             composable(Screen.Home.route) {
-
+                val themeViewModel: ThemeViewModel = hiltViewModel()
+                val themeMode by themeViewModel.themeMode.collectAsState()
                 HomeScreen(
                     onNavigateToGallery = { navController.navigate(Screen.Gallery.route) },
                     onNavigateToStreaming = { navController.navigate(Screen.StreamingHome.route) },
                     onNavigateToNovel = { navController.navigate(Screen.NovelLibrary.route) },
-                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+                    themeMode = themeMode,
+                    onThemeToggle = themeViewModel::cycleThemeMode
                 )
             }
 

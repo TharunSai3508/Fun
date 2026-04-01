@@ -120,7 +120,10 @@ class NovelParser @Inject constructor() {
                     .maxBodySize(0)
                     .get()
 
-                extractGenericChapter(doc)
+                val extracted = extractGenericChapter(doc)
+                if (extracted.isBlank()) {
+                    extractFromScripts(doc).ifBlank { "Unable to extract chapter content from this source." }
+                } else extracted
 
             } catch (e: java.net.SocketTimeoutException) {
                 "Connection timed out. Please try again."
@@ -303,6 +306,27 @@ class NovelParser @Inject constructor() {
 
         // Last resort: body text
         return doc.body()?.text() ?: "No content found"
+    }
+
+
+    private fun extractFromScripts(doc: Document): String {
+        val scripts = doc.select("script")
+        val candidates = scripts.mapNotNull {
+            it.data().takeIf { data -> data.contains("chapter", true) || data.contains("content", true) }
+        }
+        val jsonLike = candidates.firstOrNull {
+            it.contains("\"content\"") || it.contains("chapterBody", true)
+        } ?: return ""
+
+        val regex = Regex(
+            "\"content\"\\s*:\\s*\"(.*?)\"",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        )
+        val raw = regex.find(jsonLike)?.groupValues?.getOrNull(1) ?: return ""
+        return raw.replace("\\n", "\n")
+            .replace("<br>", "\n")
+            .replace(Regex("<[^>]+>"), "")
+            .trim()
     }
 
     private fun normalizeUrl(href: String, baseUrl: String): String {

@@ -173,30 +173,33 @@ class NovelViewModel @Inject constructor(
         viewModelScope.launch {
 
             _readerState.update {
-                it.copy(isDownloadingChapter = true)
+                it.copy(isDownloadingChapter = true, errorMessage = null)
             }
 
             val chapter = repository.getChapterById(chapterId)
 
             if (chapter != null) {
+                try {
+                    val downloadedChapter =
+                        if (!chapter.isDownloaded) repository.downloadChapter(chapter) else chapter
 
-                val downloadedChapter =
-                    if (!chapter.isDownloaded)
-                        repository.downloadChapter(chapter)
-                    else
-                        chapter
-
-                _readerState.update {
-                    it.copy(
-                        currentChapter = downloadedChapter,
-                        isDownloadingChapter = false
-                    )
+                    _readerState.update {
+                        it.copy(
+                            currentChapter = downloadedChapter,
+                            isDownloadingChapter = false,
+                            errorMessage = if (downloadedChapter.content.isBlank()) "Unable to load chapter content from source." else null
+                        )
+                    }
+                } catch (e: Exception) {
+                    _readerState.update {
+                        it.copy(isDownloadingChapter = false, errorMessage = e.message ?: "Unable to download chapter")
+                    }
                 }
 
             } else {
 
                 _readerState.update {
-                    it.copy(isDownloadingChapter = false)
+                    it.copy(isDownloadingChapter = false, errorMessage = "Chapter not found.")
                 }
             }
         }

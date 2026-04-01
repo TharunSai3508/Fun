@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -20,11 +21,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.unistream.streaming.viewmodel.StreamingViewModel
 import kotlinx.coroutines.delay
+import okhttp3.OkHttpClient
 
 @Composable
 fun PlayerScreen(
@@ -47,9 +53,16 @@ fun PlayerScreen(
     var showSpeedSheet by remember { mutableStateOf(false) }
 
     val player = remember {
+        val okHttpFactory = OkHttpDataSource.Factory(OkHttpClient())
         ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.parse(sourceId))
-            setMediaItem(mediaItem)
+            val uri = Uri.parse(sourceId)
+            val mediaItem = MediaItem.fromUri(uri)
+            val mediaSource = when {
+                sourceId.contains(".m3u8", true) -> HlsMediaSource.Factory(okHttpFactory).createMediaSource(mediaItem)
+                sourceId.contains(".mpd", true) -> DashMediaSource.Factory(okHttpFactory).createMediaSource(mediaItem)
+                else -> ProgressiveMediaSource.Factory(okHttpFactory).createMediaSource(mediaItem)
+            }
+            setMediaSource(mediaSource)
             prepare()
             playWhenReady = true
         }
@@ -88,7 +101,7 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { showControls = !showControls },
@@ -137,17 +150,17 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                         }
                         Row {
                             IconButton(onClick = { showSpeedSheet = true }) {
-                                Icon(Icons.Default.Speed, contentDescription = "Speed", tint = Color.White)
+                                Icon(Icons.Default.Speed, contentDescription = "Speed", tint = MaterialTheme.colorScheme.onBackground)
                             }
                             IconButton(onClick = {}) {
-                                Icon(Icons.Default.Subtitles, contentDescription = "Subtitles", tint = Color.White)
+                                Icon(Icons.Default.Subtitles, contentDescription = "Subtitles", tint = MaterialTheme.colorScheme.onBackground)
                             }
                             IconButton(onClick = {}) {
-                                Icon(Icons.Default.Cast, contentDescription = "Cast", tint = Color.White)
+                                Icon(Icons.Default.Cast, contentDescription = "Cast", tint = MaterialTheme.colorScheme.onBackground)
                             }
                         }
                     }
@@ -166,7 +179,7 @@ fun PlayerScreen(
                         Icon(
                             Icons.Default.Replay10,
                             contentDescription = "-10s",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -179,7 +192,7 @@ fun PlayerScreen(
                         Icon(
                             if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.size(56.dp)
                         )
                     }
@@ -190,7 +203,7 @@ fun PlayerScreen(
                         Icon(
                             Icons.Default.Forward10,
                             contentDescription = "+10s",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -215,9 +228,9 @@ fun PlayerScreen(
                     ) {
                         Text(formatTime(currentPosition), color = Color.White, style = MaterialTheme.typography.labelMedium)
                         if (playbackSpeed != 1f) {
-                            Text("${playbackSpeed}x", color = Color(0xFFE50914), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            Text("${playbackSpeed}x", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         }
-                        Text(formatTime(duration), color = Color.White.copy(0.6f), style = MaterialTheme.typography.labelMedium)
+                        Text(formatTime(duration), color = MaterialTheme.colorScheme.onBackground.copy(0.6f), style = MaterialTheme.typography.labelMedium)
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -230,9 +243,9 @@ fun PlayerScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = SliderDefaults.colors(
-                            thumbColor = Color(0xFFE50914),
-                            activeTrackColor = Color(0xFFE50914),
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                         )
                     )
                 }
@@ -263,7 +276,7 @@ private fun SpeedSelectionSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E1E1E)
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -278,12 +291,12 @@ private fun SpeedSelectionSheet(
                     headlineContent = {
                         Text(
                             if (speed == 1.0f) "Normal" else "${speed}x",
-                            color = if (currentSpeed == speed) Color(0xFFE50914) else Color.White
+                            color = if (currentSpeed == speed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                     },
                     trailingContent = {
                         if (currentSpeed == speed) {
-                            Icon(Icons.Default.Check, null, tint = Color(0xFFE50914))
+                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                         }
                     },
                     modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onSpeedSelected(speed) }) },

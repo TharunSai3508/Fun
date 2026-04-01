@@ -14,163 +14,159 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// ─────────────────────────────────────────────
-// Module Theme Enum
-// ─────────────────────────────────────────────
 enum class AppModule { GALLERY, STREAMING, NOVEL, GLOBAL }
 
+data class ExtendedColors(
+    val accent: Color,
+    val accentAlt: Color,
+    val cardGradientStart: Color,
+    val cardGradientEnd: Color,
+)
+
 val LocalAppModule = compositionLocalOf { AppModule.GLOBAL }
+val LocalExtendedColors = compositionLocalOf {
+    ExtendedColors(
+        accent = UniPrimaryLight,
+        accentAlt = UniSecondaryLight,
+        cardGradientStart = UniPrimaryLight,
+        cardGradientEnd = UniSecondaryLight
+    )
+}
 
-// ─────────────────────────────────────────────
-// Gallery Color Scheme (Light / Pastel)
-// ─────────────────────────────────────────────
-private val GalleryLightColors = lightColorScheme(
-    primary = GalleryPrimary,
-    onPrimary = GalleryOnPrimary,
-    primaryContainer = GalleryPrimaryContainer,
-    secondary = GallerySecondary,
-    tertiary = GalleryTertiary,
-    background = GalleryBackground,
-    surface = GallerySurface,
-    onBackground = UniGray900,
-    onSurface = UniGray800,
-    surfaceVariant = UniGray100,
-    outline = UniGray400
-)
+private fun lightScheme(module: AppModule) = when (module) {
+    AppModule.GALLERY -> lightColorScheme(
+        primary = GalleryPrimaryLight,
+        secondary = GallerySecondaryLight,
+        tertiary = GalleryTertiaryLight,
+        background = GalleryBackgroundLight,
+        surface = GallerySurfaceLight,
+        onPrimary = UniWhite,
+        onBackground = UniGray900,
+        onSurface = UniGray800,
+        outline = UniGray400
+    )
+    AppModule.STREAMING -> lightColorScheme(
+        primary = StreamingPrimaryLight,
+        secondary = StreamingSecondaryLight,
+        background = StreamingBackgroundLight,
+        surface = StreamingSurfaceLight,
+        onPrimary = UniWhite,
+        onBackground = UniWhite,
+        onSurface = UniGray200,
+        outline = UniGray600
+    )
+    AppModule.NOVEL -> lightColorScheme(
+        primary = NovelPrimaryLight,
+        secondary = NovelSecondaryLight,
+        background = NovelBackgroundLight,
+        surface = NovelSurfaceLight,
+        onPrimary = UniWhite,
+        onBackground = UniGray900,
+        onSurface = UniGray800,
+        outline = UniGray600
+    )
+    AppModule.GLOBAL -> lightColorScheme(
+        primary = UniPrimaryLight,
+        secondary = UniSecondaryLight,
+        background = UniWhite,
+        surface = UniGray100,
+        onPrimary = UniWhite,
+        onBackground = UniGray900,
+        onSurface = UniGray800,
+        outline = UniGray400
+    )
+}
 
-// ─────────────────────────────────────────────
-// Gallery Color Scheme (Dark)
-// ─────────────────────────────────────────────
-private val GalleryDarkColors = darkColorScheme(
-    primary = GalleryAccentPink,
-    onPrimary = Color(0xFF1A0010),
-    primaryContainer = Color(0xFF880050),
-    secondary = GallerySecondary,
-    tertiary = GalleryAccentPurple,
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    onBackground = UniWhite,
-    onSurface = UniGray200,
-    surfaceVariant = Color(0xFF2A2A2A),
-    outline = UniGray600
-)
+private fun darkScheme(module: AppModule) = when (module) {
+    AppModule.GALLERY -> darkColorScheme(
+        primary = GalleryPrimaryDark,
+        secondary = GallerySecondaryDark,
+        tertiary = GalleryTertiaryDark,
+        background = GalleryBackgroundDark,
+        surface = GallerySurfaceDark,
+        onPrimary = UniBlack,
+        onBackground = UniWhite,
+        onSurface = UniGray200,
+        outline = UniGray600
+    )
+    AppModule.STREAMING -> darkColorScheme(
+        primary = StreamingPrimaryDark,
+        secondary = StreamingSecondaryDark,
+        background = StreamingBackgroundDark,
+        surface = StreamingSurfaceDark,
+        onPrimary = UniBlack,
+        onBackground = UniWhite,
+        onSurface = UniGray200,
+        outline = UniGray600
+    )
+    AppModule.NOVEL -> darkColorScheme(
+        primary = NovelPrimaryDark,
+        secondary = NovelSecondaryDark,
+        background = NovelBackgroundDark,
+        surface = NovelSurfaceDark,
+        onPrimary = UniBlack,
+        onBackground = NovelDarkText,
+        onSurface = NovelDarkText,
+        outline = UniGray600
+    )
+    AppModule.GLOBAL -> darkColorScheme(
+        primary = UniPrimaryDark,
+        secondary = UniSecondaryDark,
+        background = UniBlack,
+        surface = UniGray900,
+        onPrimary = UniBlack,
+        onBackground = UniWhite,
+        onSurface = UniGray200,
+        outline = UniGray600
+    )
+}
 
-// ─────────────────────────────────────────────
-// Streaming Color Scheme (Dark / Cinematic)
-// ─────────────────────────────────────────────
-private val StreamingDarkColors = darkColorScheme(
-    primary = StreamingPrimary,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF8B0000),
-    secondary = StreamingSecondary,
-    background = StreamingBackground,
-    surface = StreamingSurface,
-    surfaceVariant = StreamingSurfaceVariant,
-    onBackground = StreamingOnBackground,
-    onSurface = StreamingOnSurface,
-    outline = UniGray600
-)
+private fun extended(module: AppModule, darkTheme: Boolean): ExtendedColors = when (module) {
+    AppModule.GALLERY -> ExtendedColors(
+        accent = if (darkTheme) GalleryPrimaryDark else GalleryPrimaryLight,
+        accentAlt = if (darkTheme) GalleryTertiaryDark else GalleryTertiaryLight,
+        cardGradientStart = if (darkTheme) GalleryPrimaryDark else GalleryPrimaryLight,
+        cardGradientEnd = if (darkTheme) GalleryTertiaryDark else GalleryTertiaryLight
+    )
+    AppModule.STREAMING -> ExtendedColors(
+        accent = if (darkTheme) StreamingPrimaryDark else StreamingPrimaryLight,
+        accentAlt = if (darkTheme) StreamingSecondaryDark else StreamingSecondaryLight,
+        cardGradientStart = if (darkTheme) StreamingPrimaryDark else StreamingPrimaryLight,
+        cardGradientEnd = if (darkTheme) StreamingSecondaryDark else StreamingSecondaryLight
+    )
+    AppModule.NOVEL -> ExtendedColors(
+        accent = if (darkTheme) NovelPrimaryDark else NovelPrimaryLight,
+        accentAlt = if (darkTheme) NovelSecondaryDark else NovelSecondaryLight,
+        cardGradientStart = if (darkTheme) NovelPrimaryDark else NovelPrimaryLight,
+        cardGradientEnd = if (darkTheme) NovelSecondaryDark else NovelSecondaryLight
+    )
+    AppModule.GLOBAL -> ExtendedColors(
+        accent = if (darkTheme) UniPrimaryDark else UniPrimaryLight,
+        accentAlt = if (darkTheme) UniSecondaryDark else UniSecondaryLight,
+        cardGradientStart = if (darkTheme) UniPrimaryDark else UniPrimaryLight,
+        cardGradientEnd = if (darkTheme) UniSecondaryDark else UniSecondaryLight
+    )
+}
 
-// ─────────────────────────────────────────────
-// Novel Color Scheme (Light / Warm Paper)
-// ─────────────────────────────────────────────
-private val NovelLightColors = lightColorScheme(
-    primary = NovelPrimary,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFBBDEFB),
-    secondary = NovelSecondary,
-    tertiary = NovelTertiary,
-    background = NovelBackground,
-    surface = NovelSurface,
-    onBackground = NovelOnBackground,
-    onSurface = NovelOnSurface,
-    surfaceVariant = Color(0xFFFFF3E0),
-    outline = Color(0xFFBCAAA4)
-)
-
-private val NovelDarkColors = darkColorScheme(
-    primary = NovelSecondary,
-    onPrimary = Color.Black,
-    secondary = NovelTertiary,
-    background = NovelSurfaceDark,
-    surface = Color(0xFF242424),
-    onBackground = NovelTextDark,
-    onSurface = NovelTextDark,
-    surfaceVariant = Color(0xFF2C2C2C),
-    outline = UniGray600
-)
-
-// ─────────────────────────────────────────────
-// Main App Theme Wrapper
-// ─────────────────────────────────────────────
 @Composable
 fun UniStreamTheme(
-    module: AppModule = AppModule.GLOBAL,
     darkTheme: Boolean = isSystemInDarkTheme(),
+    module: AppModule = AppModule.GLOBAL,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when (module) {
-        AppModule.GALLERY -> if (darkTheme) GalleryDarkColors else GalleryLightColors
-        AppModule.STREAMING -> StreamingDarkColors
-        AppModule.NOVEL -> if (darkTheme) NovelDarkColors else NovelLightColors
-        AppModule.GLOBAL -> if (darkTheme) darkColorScheme(
-            primary = Color(0xFFBB86FC),
-            onPrimary = Color(0xFF1A0050),
-            primaryContainer = Color(0xFF3700B3),
-            secondary = Color(0xFF03DAC6),
-            background = UniBlack,
-            surface = UniGray900,
-            onBackground = UniWhite,
-            onSurface = UniGray200,
-            surfaceVariant = UniGray800,
-            outline = UniGray600
-        ) else lightColorScheme(
-            primary = Color(0xFF6200EE),
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFFEDE7F6),
-            secondary = Color(0xFF03DAC6),
-            background = UniWhite,
-            surface = UniGray100,
-            onBackground = UniGray900,
-            onSurface = UniGray800,
-            surfaceVariant = UniGray200,
-            outline = UniGray400
-        )
-    }
+    val colorScheme = if (darkTheme) darkScheme(module) else lightScheme(module)
+    val ext = extended(module, darkTheme)
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
-                (module != AppModule.STREAMING) && !darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
-    CompositionLocalProvider(LocalAppModule provides module) {
-        MaterialTheme(
-            colorScheme = colorScheme,
-            typography = UniStreamTypography,
-            content = content
-        )
+    CompositionLocalProvider(LocalAppModule provides module, LocalExtendedColors provides ext) {
+        MaterialTheme(colorScheme = colorScheme, typography = UniStreamTypography, content = content)
     }
-}
-
-// ─────────────────────────────────────────────
-// Module-specific Theme Wrappers (convenience)
-// ─────────────────────────────────────────────
-@Composable
-fun GalleryTheme(content: @Composable () -> Unit) {
-    UniStreamTheme(module = AppModule.GALLERY, content = content)
-}
-
-@Composable
-fun StreamingTheme(content: @Composable () -> Unit) {
-    UniStreamTheme(module = AppModule.STREAMING, content = content)
-}
-
-@Composable
-fun NovelTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    UniStreamTheme(module = AppModule.NOVEL, darkTheme = darkTheme, content = content)
 }
