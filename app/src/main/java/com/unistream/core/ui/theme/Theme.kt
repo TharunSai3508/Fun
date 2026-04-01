@@ -170,3 +170,21 @@ fun UniStreamTheme(
         MaterialTheme(colorScheme = colorScheme, typography = UniStreamTypography, content = content)
     }
 }
+
+@Composable
+fun GalleryTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) = UniStreamTheme(darkTheme = darkTheme, module = AppModule.GALLERY, content = content)
+
+@Composable
+fun StreamingTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) = UniStreamTheme(darkTheme = darkTheme, module = AppModule.STREAMING, content = content)
+
+@Composable
+fun NovelTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) = UniStreamTheme(darkTheme = darkTheme, module = AppModule.NOVEL, content = content)

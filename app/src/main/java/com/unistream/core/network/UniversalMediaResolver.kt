@@ -101,10 +101,11 @@ class UniversalMediaResolver @Inject constructor(
 
     private fun resolveReddit(url: String): List<ResolvedMedia> {
         val jsonUrl = url.split("?")[0].trimEnd('/') + ".json"
-        val response = fetchJson(jsonUrl) ?: return resolveGenericHtml(url)
+        val response = fetchRaw(jsonUrl) ?: return resolveGenericHtml(url)
 
         val post = runCatching {
-            response.getJSONObject(0)
+            JSONArray(response)
+                .getJSONObject(0)
                 .getJSONObject("data")
                 .getJSONArray("children")
                 .getJSONObject(0)
@@ -258,7 +259,8 @@ class UniversalMediaResolver @Inject constructor(
         // mp4-high first, then mp4
         for (key in listOf("mp4-high", "mp4")) {
             val file = files.optJSONObject(key) ?: continue
-            val videoUrl = file.optString("url").ifBlank { continue }
+            val videoUrl = file.optString("url")
+            if (videoUrl.isBlank()) continue
             val height = file.optInt("height")
             val quality = if (height > 0) "${height}p" else key
             results.add(
@@ -387,6 +389,14 @@ class UniversalMediaResolver @Inject constructor(
             okHttpClient.newCall(req).execute().use { response ->
                 if (!response.isSuccessful) null
                 else response.body?.string()?.let { JSONObject(it) }
+            }
+        }.getOrNull()
+
+    private fun fetchRaw(url: String, extraHeaders: Map<String, String> = emptyMap()): String? =
+        runCatching {
+            val req = buildRequest(url, extraHeaders)
+            okHttpClient.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) null else response.body?.string()
             }
         }.getOrNull()
 
