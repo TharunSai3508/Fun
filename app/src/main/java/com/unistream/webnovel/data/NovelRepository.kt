@@ -77,11 +77,13 @@ class NovelRepository @Inject constructor(
 
     suspend fun downloadChapter(chapter: ChapterEntity): ChapterEntity =
         withContext(Dispatchers.IO) {
-
             if (chapter.isDownloaded && chapter.content.isNotBlank())
                 return@withContext chapter
 
             val content = parser.parseChapterContent(chapter.sourceUrl)
+
+            // Do not mark as downloaded if content is blank — parser failed
+            if (content.isBlank()) return@withContext chapter
 
             val updated = chapter.copy(
                 content = content,
@@ -90,6 +92,9 @@ class NovelRepository @Inject constructor(
             )
 
             chapterDao.insertChapter(updated)
+
+            // Track downloaded chapter count on the parent novel
+            novelDao.incrementDownloadedChapters(chapter.novelId)
 
             updated
         }

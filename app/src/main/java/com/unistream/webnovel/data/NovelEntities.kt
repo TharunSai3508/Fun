@@ -137,6 +137,9 @@ interface NovelDao {
 
     @Query("UPDATE novels SET totalChapters = :total, lastUpdated = :updatedAt WHERE id = :id")
     suspend fun updateChapterCount(id: Long, total: Int, updatedAt: Long)
+
+    @Query("UPDATE novels SET downloadedChapters = downloadedChapters + 1 WHERE id = :id")
+    suspend fun incrementDownloadedChapters(id: Long)
 }
 
 // ─────────────────────────────────────────────
