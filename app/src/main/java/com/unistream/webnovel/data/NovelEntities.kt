@@ -142,6 +142,7 @@ interface NovelDao {
     suspend fun incrementDownloadedChapters(id: Long)
 }
 
+
 // ─────────────────────────────────────────────
 // Chapter DAO
 // ─────────────────────────────────────────────
